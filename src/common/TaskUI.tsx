@@ -8,6 +8,7 @@ import {
   Alert,
   AlertIcon,
   AlertDescription,
+  Input,
 } from "@chakra-ui/react";
 import { debugMode } from "../constants";
 import { useAppState } from "../state/store";
@@ -74,6 +75,8 @@ const TaskUI = () => {
     setInstructions: state.ui.actions.setInstructions,
     voiceMode: state.settings.voiceMode,
     isListening: state.currentTask.isListening,
+    maxActions: state.currentTask.maxActions,
+    setMaxActions: state.currentTask.actions.setMaxActions,
   }));
   const taskInProgress = state.taskStatus === "running";
 
@@ -111,6 +114,13 @@ const TaskUI = () => {
     }
   };
 
+  const handleMaxActionsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.replace(/\D/g, ""); // Remove all non-digit characters
+    if (value === "" || !isNaN(parseInt(value, 10))) {
+      state.setMaxActions(parseInt(value, 10) || 0);
+    }
+  };
+
   return (
     <>
       <AutosizeTextarea
@@ -124,7 +134,7 @@ const TaskUI = () => {
         onKeyDown={onKeyDown}
       />
       <HStack mt={2} mb={2}>
-        <RunTaskButton runTask={runTask} />
+        <RunTaskButton runTask={runTask} disabled={state.maxActions === 0} />
         {state.voiceMode && (
           <VoiceButton
             taskInProgress={taskInProgress}
@@ -132,6 +142,13 @@ const TaskUI = () => {
           />
         )}
         <Spacer />
+        <Input
+          type="number"
+          value={state.maxActions}
+          onChange={handleMaxActionsChange}
+          placeholder="Max Actions"
+          width="100px"
+        />
       </HStack>
       {state.voiceMode && (
         <Alert status="info" borderRadius="lg">

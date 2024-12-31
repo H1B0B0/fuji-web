@@ -61,7 +61,9 @@ export type CurrentTaskSlice = {
     performActionString: (actionString: string) => Promise<void>;
     startListening: () => void;
     stopListening: () => void;
+    setMaxActions: (maxActions: number) => void; // Ajoutez cette ligne
   };
+  maxActions: number; // Ajoutez cette ligne
 };
 export const createCurrentTaskSlice: MyStateCreator<CurrentTaskSlice> = (
   set,
@@ -73,6 +75,7 @@ export const createCurrentTaskSlice: MyStateCreator<CurrentTaskSlice> = (
   status: "idle",
   actionStatus: "idle",
   knowledgeInUse: null,
+  maxActions: 50, // Ajoutez cette ligne
   actions: {
     runTask: async (onError) => {
       const voiceMode = get().settings.voiceMode;
@@ -274,7 +277,9 @@ export const createCurrentTaskSlice: MyStateCreator<CurrentTaskSlice> = (
 
           // While testing let's automatically stop after 50 actions to avoid
           // infinite loops
-          if (get().currentTask.history.length >= 50) {
+          if (
+            get().currentTask.history.length >= get().currentTask.maxActions
+          ) {
             break;
           }
 
@@ -367,6 +372,11 @@ export const createCurrentTaskSlice: MyStateCreator<CurrentTaskSlice> = (
         state.currentTask.isListening = false;
         voiceControl.stopListening();
       }),
+    setMaxActions: (maxActions: number) => {
+      set((state) => {
+        state.currentTask.maxActions = maxActions;
+      });
+    },
   },
 });
 
