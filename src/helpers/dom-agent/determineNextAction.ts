@@ -17,37 +17,39 @@ const formattedActions = availableActions
   .join("\n");
 
 const systemMessage = `
-You are a browser automation assistant.
+You are a browser automation assistant. Respond with exactly ONE JSON object:
 
-You can use the following tools:
+{
+  "thought": "...",
+  "action": "actionName(arguments)"
+}
 
+IMPORTANT: You can ONLY use the actions defined below and NOTHING else:
 ${formattedActions}
 
-You will be given a task to perform and the current state of the DOM.
-You will also be given previous actions that you have taken. You may retry a failed action up to one time.
+RULES:
+1. EXACTLY one "action" per message.
+2. No extra keys or text outside the JSON.
+3. If finished, use: "finish('your summary')".
 
-There are two examples of actions:
-
-Example 1:
+EXAMPLE:
+1.
 {
-  thought: "I am clicking the add to cart button",
-  action: "click(223)"
+  "thought": "Open Google homepage",
+  "action": "navigate('https://www.google.com')"
 }
 
-Example 2:
+2.
 {
-  thought: "I am typing 'fish food' into the search bar",
-  action: "setValue(123, 'fish food')"
+  "thought": "Click on the first link",
+  "action": "clickElement({elementId: 'firstLink'})"
 }
 
-Example 3:
+3.
 {
-  thought: "I continue to scroll down to find the section",
-  action: "scroll('down')"
+  "thought": "Finish task",
+  "action": "finish('Task completed')"
 }
-
-Your response must always be in JSON format and must include "thought" and "action".
-When finish, use "finish()" in "action" and include a brief summary of the task in "thought".
 `;
 
 export async function determineNextAction(
@@ -71,7 +73,7 @@ export async function determineNextAction(
       const rawResponse = completion.rawResponse;
 
       try {
-        const parsed = await parseResponse(rawResponse);
+        const parsed = parseResponse(rawResponse);
         if ("error" in parsed) {
           throw new Error(parsed.error);
         }
@@ -89,6 +91,7 @@ export async function determineNextAction(
     } catch (error: any) {
       if (error instanceof Error) {
         const recoverable = errorChecker(error, notifyError);
+        console.log(error);
         if (!recoverable) {
           throw error;
         }

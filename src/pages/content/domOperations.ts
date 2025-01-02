@@ -49,20 +49,26 @@ export type RPCMessage = {
 // This function should run in the content script
 export const initializeRPC = () => {
   chrome.runtime.onMessage.addListener(
-    (message: RPCMessage, sender, sendResponse): true | undefined => {
-      const { method, payload } = message;
-      console.log("RPC listener", method);
-      if (method in rpcMethods) {
-        // @ts-expect-error - we know this is valid (see pageRPC)
-        const resp = rpcMethods[method as keyof RPCMethods](...payload);
-        if (resp instanceof Promise) {
-          resp.then((resolvedResp) => {
-            sendResponse(resolvedResp);
-          });
-        } else {
+    (message: RPCMessage | { type: string }, sender, sendResponse) => {
+      if ("type" in message && message.type === "ping") {
+        sendResponse("pong");
+        return;
+      }
+
+      if ("method" in message) {
+        const { method, payload } = message;
+        console.log("RPC listener", method);
+        if (method in rpcMethods) {
+          const resp = rpcMethods[method as keyof RPCMethods](...payload);
+          if (resp instanceof Promise) {
+            resp.then(sendResponse).catch((e) => {
+              console.error("RPC error:", e);
+              sendResponse(null);
+            });
+            return true;
+          }
           sendResponse(resp);
         }
-        return true;
       }
     },
   );

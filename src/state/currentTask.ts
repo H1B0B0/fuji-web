@@ -27,7 +27,12 @@ import { MyStateCreator } from "./store";
 import buildAnnotatedScreenshots from "../helpers/buildAnnotatedScreenshots";
 import { voiceControl } from "../helpers/voiceControl";
 import { fetchKnowledge, type Knowledge } from "../helpers/knowledge";
-import { isValidModelSettings, AgentMode } from "../helpers/aiSdkUtils";
+import {
+  isValidModelSettings,
+  AgentMode,
+  SupportedModels,
+  isLocalModel,
+} from "../helpers/aiSdkUtils";
 
 export type TaskHistoryEntry = {
   prompt: string;
@@ -78,12 +83,14 @@ export const createCurrentTaskSlice: MyStateCreator<CurrentTaskSlice> = (
   maxActions: 50, // Ajoutez cette ligne
   actions: {
     runTask: async (onError) => {
-      const voiceMode = get().settings.voiceMode;
+      const selectedModel = get().settings.selectedModel;
+      const agentMode = get().settings.agentMode;
 
       if (
+        !isLocalModel(selectedModel) &&
         !isValidModelSettings(
-          get().settings.selectedModel,
-          get().settings.agentMode,
+          selectedModel,
+          agentMode,
           get().settings.openAIKey,
           get().settings.anthropicKey,
           get().settings.geminiKey,
@@ -95,7 +102,7 @@ export const createCurrentTaskSlice: MyStateCreator<CurrentTaskSlice> = (
         return;
       }
 
-      const agentMode = get().settings.agentMode;
+      const voiceMode = get().settings.voiceMode;
 
       const wasStopped = () => get().currentTask.status !== "running";
       const setActionStatus = (status: CurrentTaskSlice["actionStatus"]) => {

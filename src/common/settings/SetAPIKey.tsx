@@ -13,6 +13,7 @@ import {
 } from "@chakra-ui/react";
 import React from "react";
 import { useAppState } from "../../state/store";
+import { SupportedModels } from "@root/src/helpers/aiSdkUtils";
 
 type SetAPIKeyProps = {
   asInitializerView?: boolean;
@@ -64,29 +65,8 @@ const SetAPIKey = ({
   return (
     <VStack spacing={4}>
       <Text fontSize="sm">
-        You&rsquo;ll need an OpenAI or Anthropic API Key to run the Fuji in
-        developer mode. If you don&rsquo;t already have one available, you can
-        create one in your{" "}
-        <Link
-          href="https://platform.openai.com/account/api-keys"
-          color="blue"
-          isExternal
-        >
-          OpenAI account
-        </Link>{" "}
-        or your{" "}
-        <Link
-          href="https://console.anthropic.com/settings/keys"
-          color="blue"
-          isExternal
-        >
-          Anthropic account
-        </Link>
-        .
-        <br />
-        <br />
-        Fuji stores your API keys locally on your device, and they are only used
-        to communicate with the OpenAI API and/or the Anthropic API.
+        You'll need an OpenAI, Anthropic, or Google API key to run Fuji, or you
+        can continue with local models only.
       </Text>
       <Box position="relative" py="2" w="full">
         <Divider />
@@ -188,14 +168,28 @@ const SetAPIKey = ({
         </HStack>
       </FormControl>
 
-      <Button
-        onClick={onSave}
-        w="full"
-        isDisabled={!openAIKey && !anthropicKey && !geminiKey}
-        colorScheme="blue"
-      >
-        Save
-      </Button>
+      <HStack w="full" spacing={4}>
+        <Button
+          onClick={onSave}
+          w="full"
+          isDisabled={!openAIKey && !anthropicKey && !geminiKey}
+          colorScheme="blue"
+        >
+          Save API Keys
+        </Button>
+        <Button
+          onClick={() => {
+            updateSettings({
+              selectedModel: SupportedModels.OllamaMistral,
+            });
+            onClose?.();
+          }}
+          w="full"
+          variant="outline"
+        >
+          Continue with Local Models
+        </Button>
+      </HStack>
     </VStack>
   );
 };

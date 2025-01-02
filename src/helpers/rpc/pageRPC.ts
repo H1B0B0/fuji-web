@@ -43,24 +43,41 @@ export const callRPCWithTab = async <K extends keyof RPCMethods>(
   tabId: number,
   method: K,
   payload: Parameters<RPCMethods[K]>,
-  maxTries = 2,
+  maxTries = 3, // Augmenter le nombre d'essais
 ): Promise<ReturnType<RPCMethods[K]>> => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let err: any;
   for (let i = 0; i < maxTries; i++) {
     try {
+      console.log(`Attempt ${i + 1}/${maxTries} to call RPC method ${method}`);
+
+      // Vérifier si le content script est injecté
+      await ensureContentScriptInjected(tabId);
+
       const response = await sendMessage(tabId, method, payload);
       return response;
     } catch (e) {
-      if (i === maxTries - 1) {
-        // Last try, throw the error
-        err = e;
-      } else {
-        // Content script may not have loaded, retry
-        console.error(e);
-        await sleep(1000);
+      console.error(`RPC attempt ${i + 1} failed:`, e);
+      err = e;
+      if (i < maxTries - 1) {
+        // Attendre plus longtemps entre chaque essai
+        await sleep((i + 1) * 1000);
       }
     }
   }
   throw err;
 };
+
+// Fonction pour s'assurer que le content script est injecté
+async function ensureContentScriptInjected(tabId: number) {
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: "ping" });
+  } catch (e) {
+    console.log("Content script not found, injecting...");
+    await chrome.runtime.sendMessage({
+      action: "injectFunctions",
+      tabId,
+    });
+    // Attendre que le script soit injecté
+    await sleep(500);
+  }
+}

@@ -69,18 +69,52 @@ function parseFunctionCall(callString: string) {
   return { name, args };
 }
 
-export function parseResponse(text: string): ParsedResponse {
-  let action;
-  try {
-    action = JSON.parse(text);
-  } catch (_e) {
-    try {
-      action = JSON.parse(extractJsonFromMarkdown(text)[0]);
-    } catch (_e) {
-      throw new Error("Response does not contain valid JSON.");
+function normalizeAction(action: any): { thought: string; action: string } {
+  const thought = action.thought || "Performing action";
+
+  // Case 1: Handle direct click with target_id
+  if (action.action === "click" && action.target_id) {
+    return {
+      thought,
+      action: `click(${action.target_id})`,
+    };
+  }
+
+  // Case 2: Handle uid format
+  if (typeof action.action === "string") {
+    const uidMatch = action.action.match(/uid=(\d+)/);
+    if (uidMatch) {
+      return {
+        thought,
+        action: `click(${uidMatch[1]})`,
+      };
     }
   }
 
+  // Case 3: Already correct format
+  return {
+    thought,
+    action: action.action,
+  };
+}
+
+export function parseResponse(text: string): ParsedResponse {
+  let action;
+  // Clean up response - remove anything after JSON
+  const jsonEndIndex = text.lastIndexOf("}");
+  text = jsonEndIndex !== -1 ? text.substring(0, jsonEndIndex + 1) : text;
+
+  try {
+    action = JSON.parse(text);
+  } catch (_e) {
+    action = JSON.parse(extractJsonFromMarkdown(text)[0]);
+  }
+
+  // Normalize action format
+  const normalized = normalizeAction(action);
+  action = normalized;
+
+  // Continue with existing validation
   if (!action.thought) {
     return {
       error: "Invalid response: Thought not found in the model response.",

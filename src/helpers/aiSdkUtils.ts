@@ -24,6 +24,12 @@ export enum SupportedModels {
   Claude3Opus = "claude-3-opus-20240229",
   Claude35Sonnet = "claude-3-5-sonnet-20240620",
   Gemini15Pro = "gemini-1.5-pro",
+  OllamaCodeLlama = "codellama",
+  OllamaMistral = "mistral",
+  OllamaLlama32 = "llama3.2",
+  Ollamaqwq = "qwq",
+  OllamahfMinistral = "hf.co/bartowski/Ministral-8B-Instruct-2410-GGUF",
+  Ollamagemma2 = "gemma2",
 }
 
 function isSupportedModel(value: string): value is SupportedModels {
@@ -46,6 +52,13 @@ export const DisplayName = {
   [SupportedModels.Claude3Opus]: "Claude 3 Opus",
   [SupportedModels.Claude35Sonnet]: "Claude 3.5 Sonnet",
   [SupportedModels.Gemini15Pro]: "Gemini 1.5 Pro",
+  [SupportedModels.OllamaCodeLlama]: "CodeLlama (Local)",
+  [SupportedModels.OllamaMistral]: "Mistral 7b (Local)",
+  [SupportedModels.OllamaLlama32]: "Llama 3.2 3b (Local)",
+  [SupportedModels.Ollamaqwq]: "qwq 32b (Local)",
+  [SupportedModels.OllamahfMinistral]:
+    "Hugging Face Ministral 8B Instruct 2410 GGUF (Local)",
+  [SupportedModels.Ollamagemma2]: "Gemma 2 (Local)",
 };
 
 export function hasVisionSupport(model: SupportedModels) {
@@ -61,9 +74,19 @@ export function hasVisionSupport(model: SupportedModels) {
   );
 }
 
-export type SDKChoice = "OpenAI" | "Anthropic" | "Google";
+export type SDKChoice = "OpenAI" | "Anthropic" | "Google" | "Ollama";
 
 function chooseSDK(model: SupportedModels): SDKChoice {
+  if (
+    model === SupportedModels.OllamaCodeLlama ||
+    model === SupportedModels.OllamaMistral ||
+    model === SupportedModels.OllamaLlama32 ||
+    model === SupportedModels.Ollamaqwq ||
+    model === SupportedModels.OllamahfMinistral ||
+    model === SupportedModels.Ollamagemma2
+  ) {
+    return "Ollama";
+  }
   if (model.startsWith("claude")) {
     return "Anthropic";
   }
@@ -83,15 +106,42 @@ export function isGoogleModel(model: SupportedModels) {
   return chooseSDK(model) === "Google";
 }
 
+export const isLocalModel = (model: string): boolean => {
+  return (
+    model === SupportedModels.OllamaCodeLlama ||
+    model === SupportedModels.OllamaMistral ||
+    model === SupportedModels.OllamaLlama32 ||
+    model === SupportedModels.Ollamaqwq ||
+    model === SupportedModels.OllamahfMinistral ||
+    model === SupportedModels.Ollamagemma2
+  );
+};
+
 export function isValidModelSettings(
   selectedModel: string,
   agentMode: AgentMode,
-  openAIKey: string | undefined,
-  anthropicKey: string | undefined,
-  geminiKey: string | undefined,
+  openAIKey?: string,
+  anthropicKey?: string,
+  geminiKey?: string,
 ): boolean {
   if (!isSupportedModel(selectedModel)) {
     return false;
+  }
+
+  // Allow local models without API check
+  if (isLocalModel(selectedModel)) {
+    return true;
+  }
+  // Allow local models without API keys
+  if (
+    selectedModel === SupportedModels.OllamaCodeLlama ||
+    selectedModel === SupportedModels.OllamaMistral ||
+    selectedModel === SupportedModels.OllamaLlama32 ||
+    selectedModel === SupportedModels.Ollamaqwq ||
+    selectedModel === SupportedModels.OllamahfMinistral ||
+    selectedModel === SupportedModels.Ollamagemma2
+  ) {
+    return true;
   }
   if (
     agentMode === AgentMode.VisionEnhanced &&
@@ -129,6 +179,10 @@ export function findBestMatchingModel(
   ) {
     return selectedModel as SupportedModels;
   }
+  // If no API keys are present, default to local model
+  if (!openAIKey && !anthropicKey && !geminiKey) {
+    return SupportedModels.OllamaMistral;
+  }
   if (openAIKey) {
     return SupportedModels.Gpt4Turbo;
   }
@@ -152,6 +206,61 @@ export type Response = {
   usage: OpenAI.CompletionUsage | undefined;
   rawResponse: string;
 };
+
+export async function fetchResponseFromModelOllama(
+  model: SupportedModels,
+  params: CommonMessageCreateParams,
+): Promise<Response> {
+  console.log("fetchResponseFromModelOllama with params:", params);
+
+  const url = "http://localhost:11434/api/chat";
+  const payload = {
+    model: model,
+    messages: [
+      {
+        role: "system",
+        content: params.systemMessage,
+      },
+      {
+        role: "user",
+        content: params.prompt,
+      },
+    ],
+    stream: false,
+  };
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: "http://localhost",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Ollama API error:", errorText);
+      throw new Error(`Ollama API error (${response.status}): ${errorText}`);
+    }
+
+    const data = await response.json();
+    console.log("Ollama response:", data);
+
+    return {
+      usage: {
+        total_tokens: data.eval_count || 0,
+        prompt_tokens: data.prompt_eval_count || 0,
+        completion_tokens: 0,
+      },
+      rawResponse: data.message?.content || "",
+    };
+  } catch (error) {
+    console.error("Ollama fetch error:", error);
+    throw new Error(`Failed to fetch from Ollama: ${error.message}`);
+  }
+}
 
 export async function fetchResponseFromModelOpenAI(
   model: SupportedModels,
@@ -340,13 +449,18 @@ export async function fetchResponseFromModel(
   model: SupportedModels,
   params: CommonMessageCreateParams,
 ): Promise<Response> {
+  console.log("fetchResponseFromModel with model:", model);
   const sdk = chooseSDK(model);
+  console.log("fetchResponseFromModel with sdk:", sdk);
   if (sdk === "OpenAI") {
     return await fetchResponseFromModelOpenAI(model, params);
   } else if (sdk === "Anthropic") {
     return await fetchResponseFromModelAnthropic(model, params);
   } else if (sdk === "Google") {
     return await fetchResponseFromModelGoogle(model, params);
+  } else if (sdk === "Ollama") {
+    console.error("fetchResponseFromModel Ollama with model:", model);
+    return await fetchResponseFromModelOllama(model, params);
   } else {
     throw new Error("Unsupported model");
   }
