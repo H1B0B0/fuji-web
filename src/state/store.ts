@@ -41,6 +41,7 @@ export const useAppState = create<StoreType>()(
           openAIKey: state.settings.openAIKey,
           anthropicKey: state.settings.anthropicKey,
           geminiKey: state.settings.geminiKey,
+          huggingFaceKey: state.settings.huggingFaceKey, // Ajoutez cette ligne
           openAIBaseUrl: state.settings.openAIBaseUrl,
           anthropicBaseUrl: state.settings.anthropicBaseUrl,
           agentMode: state.settings.agentMode,
@@ -57,6 +58,7 @@ export const useAppState = create<StoreType>()(
           result.settings.openAIKey,
           result.settings.anthropicKey,
           result.settings.geminiKey,
+          result.settings.huggingFaceKey, // Ajoutez cette ligne
         );
         return result;
       },

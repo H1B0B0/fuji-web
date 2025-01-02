@@ -46,6 +46,7 @@ const Settings = ({ setInSettingsView }: SettingsProps) => {
     openAIKey: state.settings.openAIKey,
     anthropicKey: state.settings.anthropicKey,
     geminiKey: state.settings.geminiKey,
+    huggingFaceKey: state.settings.huggingFaceKey,
   }));
   const toast = useToast();
 
@@ -126,6 +127,8 @@ const Settings = ({ setInSettingsView }: SettingsProps) => {
           asInitializerView={false}
           initialAnthropicKey={state.anthropicKey}
           initialOpenAIKey={state.openAIKey}
+          initialGeminiKey={state.geminiKey}
+          initialHuggingFaceKey={state.huggingFaceKey}
           onClose={backToSettings}
         />
       )}
@@ -184,6 +187,7 @@ const Settings = ({ setInSettingsView }: SettingsProps) => {
             state.openAIKey,
             state.anthropicKey,
             state.geminiKey,
+            state.huggingFaceKey,
           ) ? (
             <Alert status="error">
               <AlertIcon />

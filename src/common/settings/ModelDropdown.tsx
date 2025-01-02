@@ -14,11 +14,14 @@ const ModelDropdown = () => {
     updateSettings: state.settings.actions.update,
   }));
 
-  const { openAIKey, anthropicKey, geminiKey } = useAppState((state) => ({
-    openAIKey: state.settings.openAIKey,
-    anthropicKey: state.settings.anthropicKey,
-    geminiKey: state.settings.geminiKey,
-  }));
+  const { openAIKey, anthropicKey, geminiKey, huggingFaceKey } = useAppState(
+    (state) => ({
+      openAIKey: state.settings.openAIKey,
+      anthropicKey: state.settings.anthropicKey,
+      geminiKey: state.settings.geminiKey,
+      huggingFaceKey: state.settings.huggingFaceKey,
+    }),
+  );
 
   return (
     <Select
@@ -39,6 +42,7 @@ const ModelDropdown = () => {
               openAIKey,
               anthropicKey,
               geminiKey,
+              huggingFaceKey,
             )
           }
         >

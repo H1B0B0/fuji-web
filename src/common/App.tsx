@@ -17,7 +17,11 @@ import Settings from "./Settings";
 
 const App = () => {
   const hasAPIKey = useAppState(
-    (state) => state.settings.anthropicKey || state.settings.openAIKey,
+    (state) =>
+      state.settings.anthropicKey ||
+      state.settings.openAIKey ||
+      state.settings.huggingFaceKey ||
+      state.settings.geminiKey,
   );
   const [inSettingsView, setInSettingsView] = useState(false);
 

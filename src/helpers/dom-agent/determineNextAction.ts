@@ -35,20 +35,32 @@ RULES:
 EXAMPLE:
 1.
 {
-  "thought": "Open Google homepage",
-  "action": "navigate('https://www.google.com')"
+  "thought": "Click on an element",
+  "action": "click({elementId: 'submitButton'})"
 }
 
 2.
 {
-  "thought": "Click on the first link",
-  "action": "clickElement({elementId: 'firstLink'})"
+  "thought": "Set value of an input element",
+  "action": "setValue({elementId: 'usernameInput', value: 'exampleUser'})"
 }
 
 3.
 {
-  "thought": "Finish task",
-  "action": "finish('Task completed')"
+  "thought": "Wait for the page to load",
+  "action": "wait()"
+}
+
+4.
+{
+  "thought": "Finish the task",
+  "action": "finish('Task completed successfully')"
+}
+
+5.
+{
+  "thought": "Unable to complete the task",
+  "action": "fail('Element not found')"
 }
 `;
 

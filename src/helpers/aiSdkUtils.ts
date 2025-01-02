@@ -22,7 +22,7 @@ export enum SupportedModels {
   Gpt4OMini = "gpt-4o-mini",
   Claude3Sonnet = "claude-3-sonnet-20240229",
   Claude3Opus = "claude-3-opus-20240229",
-  Claude35Sonnet = "claude-3-5-sonnet-20240620",
+  Claude35Sonnet = "claude-3.5-sonnet-20240620",
   Gemini15Pro = "gemini-1.5-pro",
   OllamaCodeLlama = "codellama",
   OllamaMistral = "mistral",
@@ -30,6 +30,7 @@ export enum SupportedModels {
   Ollamaqwq = "qwq",
   OllamahfMinistral = "hf.co/bartowski/Ministral-8B-Instruct-2410-GGUF",
   Ollamagemma2 = "gemma2",
+  HuggingFaceLlama32 = "Qwen/Qwen2-VL-2B-Instruct",
 }
 
 function isSupportedModel(value: string): value is SupportedModels {
@@ -59,6 +60,8 @@ export const DisplayName = {
   [SupportedModels.OllamahfMinistral]:
     "Hugging Face Ministral 8B Instruct 2410 GGUF (Local)",
   [SupportedModels.Ollamagemma2]: "Gemma 2 (Local)",
+  [SupportedModels.HuggingFaceLlama32]:
+    "Qwen/Qwen2-VL-2B-Instruct (Hugging Face)",
 };
 
 export function hasVisionSupport(model: SupportedModels) {
@@ -70,11 +73,17 @@ export function hasVisionSupport(model: SupportedModels) {
     model === SupportedModels.Claude3Sonnet ||
     model === SupportedModels.Claude3Opus ||
     model === SupportedModels.Claude35Sonnet ||
-    model === SupportedModels.Gemini15Pro
+    model === SupportedModels.Gemini15Pro ||
+    model === SupportedModels.HuggingFaceLlama32
   );
 }
 
-export type SDKChoice = "OpenAI" | "Anthropic" | "Google" | "Ollama";
+export type SDKChoice =
+  | "OpenAI"
+  | "Anthropic"
+  | "Google"
+  | "Ollama"
+  | "HuggingFace";
 
 function chooseSDK(model: SupportedModels): SDKChoice {
   if (
@@ -86,6 +95,12 @@ function chooseSDK(model: SupportedModels): SDKChoice {
     model === SupportedModels.Ollamagemma2
   ) {
     return "Ollama";
+  }
+  if (
+    model === SupportedModels.HuggingFaceLlama32 ||
+    model.startsWith("meta-llama")
+  ) {
+    return "HuggingFace";
   }
   if (model.startsWith("claude")) {
     return "Anthropic";
@@ -117,12 +132,17 @@ export const isLocalModel = (model: string): boolean => {
   );
 };
 
+export function isHuggingFaceModel(model: SupportedModels): boolean {
+  return chooseSDK(model) === "HuggingFace";
+}
+
 export function isValidModelSettings(
   selectedModel: string,
   agentMode: AgentMode,
   openAIKey?: string,
   anthropicKey?: string,
   geminiKey?: string,
+  huggingFaceKey?: string,
 ): boolean {
   if (!isSupportedModel(selectedModel)) {
     return false;
@@ -158,6 +178,10 @@ export function isValidModelSettings(
   if (isGoogleModel(selectedModel) && !geminiKey) {
     return false;
   }
+  if (isHuggingFaceModel(selectedModel) && !huggingFaceKey) {
+    return false;
+  }
+
   return true;
 }
 
@@ -167,6 +191,7 @@ export function findBestMatchingModel(
   openAIKey: string | undefined,
   anthropicKey: string | undefined,
   geminiKey: string | undefined,
+  huggingFaceKey: string | undefined,
 ): SupportedModels {
   if (
     isValidModelSettings(
@@ -175,6 +200,7 @@ export function findBestMatchingModel(
       openAIKey,
       anthropicKey,
       geminiKey,
+      huggingFaceKey,
     )
   ) {
     return selectedModel as SupportedModels;
@@ -191,6 +217,9 @@ export function findBestMatchingModel(
   }
   if (geminiKey) {
     return SupportedModels.Gemini15Pro;
+  }
+  if (huggingFaceKey) {
+    return SupportedModels.HuggingFaceLlama32;
   }
   return DEFAULT_MODEL;
 }
@@ -258,10 +287,62 @@ export async function fetchResponseFromModelOllama(
     };
   } catch (error) {
     console.error("Ollama fetch error:", error);
-    throw new Error(`Failed to fetch from Ollama: ${error.message}`);
+    if (error instanceof Error) {
+      throw new Error(`Failed to fetch from Ollama: ${error.message}`);
+    } else {
+      throw new Error("Failed to fetch from Ollama: Unknown error");
+    }
   }
 }
 
+export async function fetchResponseFromModelHuggingFace(
+  model: SupportedModels,
+  params: CommonMessageCreateParams,
+): Promise<Response> {
+  const key = useAppState.getState().settings.huggingFaceKey;
+  if (!key) {
+    throw new Error("No Hugging Face key found");
+  }
+
+  const url = `https://api-inference.huggingface.co/models/${model}`;
+
+  let payload: any = {
+    inputs: params.prompt,
+  };
+
+  if (params.imageData) {
+    payload = {
+      inputs: {
+        image: params.imageData,
+        text: params.prompt,
+      },
+    };
+  }
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Hugging Face API error (${response.status}): ${errorText}`,
+    );
+  }
+
+  const data = await response.json();
+  return {
+    usage: undefined, // Hugging Face API does not provide usage information
+    rawResponse: Array.isArray(data)
+      ? data[0].generated_text
+      : data.generated_text || JSON.stringify(data),
+  };
+}
 export async function fetchResponseFromModelOpenAI(
   model: SupportedModels,
   params: CommonMessageCreateParams,
@@ -459,8 +540,9 @@ export async function fetchResponseFromModel(
   } else if (sdk === "Google") {
     return await fetchResponseFromModelGoogle(model, params);
   } else if (sdk === "Ollama") {
-    console.error("fetchResponseFromModel Ollama with model:", model);
     return await fetchResponseFromModelOllama(model, params);
+  } else if (sdk === "HuggingFace") {
+    return await fetchResponseFromModelHuggingFace(model, params);
   } else {
     throw new Error("Unsupported model");
   }

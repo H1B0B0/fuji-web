@@ -20,6 +20,7 @@ type SetAPIKeyProps = {
   initialOpenAIKey?: string;
   initialAnthropicKey?: string;
   initialGeminiKey?: string;
+  initialHuggingFaceKey?: string;
   onClose?: () => void;
 };
 
@@ -28,6 +29,7 @@ const SetAPIKey = ({
   initialOpenAIKey = "",
   initialAnthropicKey = "",
   initialGeminiKey = "",
+  initialHuggingFaceKey = "",
   onClose,
 }: SetAPIKeyProps) => {
   const { updateSettings, initialOpenAIBaseUrl, initialAnthropicBaseUrl } =
@@ -42,6 +44,9 @@ const SetAPIKey = ({
     initialAnthropicKey || "",
   );
   const [geminiKey, setGeminiKey] = React.useState(initialGeminiKey || "");
+  const [huggingFaceKey, setHuggingFaceKey] = React.useState(
+    initialHuggingFaceKey || "",
+  );
   const [openAIBaseUrl, setOpenAIBaseUrl] = React.useState(
     initialOpenAIBaseUrl || "",
   );
@@ -51,14 +56,24 @@ const SetAPIKey = ({
 
   const [showPassword, setShowPassword] = React.useState(false);
 
+  // Dans SetAPIKey.tsx
   const onSave = () => {
+    console.log("Saving API keys:", {
+      openAIKey,
+      anthropicKey,
+      geminiKey,
+      huggingFaceKey,
+    });
+
     updateSettings({
       openAIKey,
       openAIBaseUrl,
       anthropicKey,
       anthropicBaseUrl,
       geminiKey,
+      huggingFaceKey,
     });
+
     onClose && onClose();
   };
 
@@ -168,11 +183,39 @@ const SetAPIKey = ({
         </HStack>
       </FormControl>
 
+      <Box position="relative" py={2} w="full">
+        <Divider />
+        <AbsoluteCenter bg="white" px="4">
+          Hugging Face
+        </AbsoluteCenter>
+      </Box>
+      <FormControl>
+        <FormLabel>Hugging Face API Key</FormLabel>
+        <HStack w="full">
+          <Input
+            placeholder="Enter Hugging Face API Key"
+            value={huggingFaceKey}
+            onChange={(event) => setHuggingFaceKey(event.target.value)}
+            type={showPassword ? "text" : "password"}
+          />
+          {asInitializerView && (
+            <Button
+              onClick={() => setShowPassword(!showPassword)}
+              variant="outline"
+            >
+              {showPassword ? "Hide" : "Show"}
+            </Button>
+          )}
+        </HStack>
+      </FormControl>
+
       <HStack w="full" spacing={4}>
         <Button
           onClick={onSave}
           w="full"
-          isDisabled={!openAIKey && !anthropicKey && !geminiKey}
+          isDisabled={
+            !openAIKey && !anthropicKey && !geminiKey && !huggingFaceKey
+          }
           colorScheme="blue"
         >
           Save API Keys

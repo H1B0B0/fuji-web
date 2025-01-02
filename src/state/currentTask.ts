@@ -80,7 +80,7 @@ export const createCurrentTaskSlice: MyStateCreator<CurrentTaskSlice> = (
   status: "idle",
   actionStatus: "idle",
   knowledgeInUse: null,
-  maxActions: 50, // Ajoutez cette ligne
+  maxActions: 50,
   actions: {
     runTask: async (onError) => {
       const selectedModel = get().settings.selectedModel;
@@ -94,6 +94,7 @@ export const createCurrentTaskSlice: MyStateCreator<CurrentTaskSlice> = (
           get().settings.openAIKey,
           get().settings.anthropicKey,
           get().settings.geminiKey,
+          get().settings.huggingFaceKey,
         )
       ) {
         onError(
