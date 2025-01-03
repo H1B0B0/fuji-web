@@ -3,6 +3,8 @@ import { GoogleGenerativeAI, type Part } from "@google/generative-ai";
 import OpenAI from "openai";
 import { useAppState } from "../state/store";
 import { enumValues } from "./utils";
+import { HfInference } from "@huggingface/inference";
+import { Stream } from "stream";
 
 export enum AgentMode {
   // Vision = "vision",
@@ -299,50 +301,115 @@ export async function fetchResponseFromModelHuggingFace(
   model: SupportedModels,
   params: CommonMessageCreateParams,
 ): Promise<Response> {
+  console.log("fetchResponseFromModelHuggingFace with model:", model);
   const key = useAppState.getState().settings.huggingFaceKey;
   if (!key) {
     throw new Error("No Hugging Face key found");
   }
 
-  const url = `https://api-inference.huggingface.co/models/${model}`;
+  const client = new HfInference(key);
 
-  let payload: any = {
-    inputs: params.prompt,
-  };
+  try {
+    const systemPrompt = `${params.systemMessage || ""}\n\nIMPORTANT: You MUST respond in this exact JSON format:
+{
+  "thought": "your reasoning here",
+  "action": {
+    "name": "actionName",
+    "args": {
+      "key": "value"
+    }
+  }
+}`;
 
-  if (params.imageData) {
-    payload = {
-      inputs: {
-        image: params.imageData,
-        text: params.prompt,
+    const messages = [
+      {
+        role: "system",
+        content: [
+          {
+            type: "text",
+            text: systemPrompt,
+          },
+        ],
       },
-    };
-  }
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: params.prompt,
+          },
+          ...(params.imageData
+            ? [
+                {
+                  type: "image_url",
+                  image_url: { url: params.imageData },
+                },
+              ]
+            : []),
+        ],
+      },
+    ];
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `Hugging Face API error (${response.status}): ${errorText}`,
+    console.log(
+      "Sending request to HF with messages:",
+      JSON.stringify(messages, null, 2),
     );
-  }
 
-  const data = await response.json();
-  return {
-    usage: undefined, // Hugging Face API does not provide usage information
-    rawResponse: Array.isArray(data)
-      ? data[0].generated_text
-      : data.generated_text || JSON.stringify(data),
-  };
+    const chatCompletion = await client.chatCompletion({
+      model: model,
+      messages,
+      max_tokens: 500,
+      temperature: 0.7,
+      response_format: { type: "json_object" },
+    });
+
+    console.log("Raw HF response:", chatCompletion);
+
+    let responseContent = chatCompletion.choices[0].message?.content;
+    if (!responseContent) {
+      throw new Error("Empty response from HuggingFace API");
+    }
+
+    // Clean up the response and ensure it's valid JSON
+    try {
+      // Remove any markdown formatting
+      responseContent = responseContent.replace(/```json\s*|\s*```/g, "");
+
+      // Ensure it starts with {
+      if (!responseContent.trim().startsWith("{")) {
+        responseContent = "{" + responseContent;
+      }
+
+      // Parse to validate JSON
+      JSON.parse(responseContent);
+
+      return {
+        usage: undefined,
+        rawResponse: responseContent,
+      };
+    } catch (e) {
+      console.error("Failed to parse HF response as JSON:", e);
+      // Attempt to construct a valid JSON response
+      const fallbackResponse = {
+        thought: "Error formatting response",
+        action: {
+          name: "fail",
+          args: {
+            reason: "Invalid JSON response from model",
+          },
+        },
+      };
+      return {
+        usage: undefined,
+        rawResponse: JSON.stringify(fallbackResponse),
+      };
+    }
+  } catch (error) {
+    console.error("Hugging Face API error:", error);
+    throw error;
+  }
 }
+
 export async function fetchResponseFromModelOpenAI(
   model: SupportedModels,
   params: CommonMessageCreateParams,
