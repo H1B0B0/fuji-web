@@ -238,11 +238,142 @@ export type Response = {
   rawResponse: string;
 };
 
+export type OllamaModelInfo = {
+  name: string;
+  size: string;
+  digest: string;
+  modified_at: string;
+  status: "downloaded" | "downloading" | "not_downloaded";
+};
+
+export async function listOllamaModels(): Promise<OllamaModelInfo[]> {
+  try {
+    const response = await fetch("http://localhost:11434/api/tags");
+    if (!response.ok) {
+      throw new Error("Failed to fetch Ollama models");
+    }
+    const data = await response.json();
+    return data.models || [];
+  } catch (error) {
+    console.error("Error listing Ollama models:", error);
+    return [];
+  }
+}
+
+export const addNewOllamaModel = (modelName: string) => {
+  // Vérifier si le modèle n'existe pas déjà
+  if (!(modelName in SupportedModels)) {
+    // Ajouter dynamiquement le nouveau modèle à l'enum et au DisplayName
+    (SupportedModels as any)[modelName] = modelName;
+    (DisplayName as any)[modelName] = `${modelName} (Local)`;
+  }
+};
+
+// Ajouter un cache pour les modèles téléchargés
+const downloadedModelsCache = new Set<string>();
+
+export async function downloadOllamaModel(modelName: string): Promise<boolean> {
+  try {
+    const response = await fetch("http://localhost:11434/api/pull", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name: modelName }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to download model ${modelName}`);
+    }
+
+    // La réponse est un stream d'événements
+    const reader = response.body?.getReader();
+    if (!reader) return false;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      // Vous pouvez traiter les événements de progression ici
+      console.log("Download progress:", new TextDecoder().decode(value));
+    }
+
+    // Ajouter le nouveau modèle à la liste des modèles supportés
+    addNewOllamaModel(modelName);
+    // Ajouter au cache si le téléchargement réussit
+    downloadedModelsCache.add(modelName);
+    return true;
+  } catch (error) {
+    console.error(`Error downloading Ollama model ${modelName}:`, error);
+    return false;
+  }
+}
+
+export async function createCustomOllamaModel(
+  modelFile: string,
+): Promise<boolean> {
+  try {
+    const response = await fetch("http://localhost:11434/api/create", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: "custom-model",
+        modelfile: modelFile,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to create custom model");
+    }
+
+    return true;
+  } catch (error) {
+    console.error("Error creating custom Ollama model:", error);
+    return false;
+  }
+}
+
+// Modifier l'export pour rendre la fonction accessible
+export const refreshOllamaModelsCache = async (): Promise<void> => {
+  try {
+    const models = await listOllamaModels();
+    // Vider le cache
+    downloadedModelsCache.clear();
+    // Ajouter tous les modèles téléchargés au cache
+    models.forEach((model) => {
+      if (model.status === "downloaded") {
+        downloadedModelsCache.add(model.name);
+      }
+    });
+  } catch (error) {
+    console.error("Error refreshing Ollama models cache:", error);
+  }
+};
+
 export async function fetchResponseFromModelOllama(
   model: SupportedModels,
   params: CommonMessageCreateParams,
 ): Promise<Response> {
   console.log("fetchResponseFromModelOllama with params:", params);
+
+  // Vérifier d'abord le cache
+  if (!downloadedModelsCache.has(model)) {
+    // Vérifier le statut du modèle seulement si pas dans le cache
+    const models = await listOllamaModels();
+    const modelInfo = models.find((m) => m.name === model);
+
+    if (!modelInfo || modelInfo.status === "not_downloaded") {
+      console.log(`Model ${model} not found, attempting to download...`);
+      const downloaded = await downloadOllamaModel(model);
+      if (!downloaded) {
+        throw new Error(`Failed to download model ${model}`);
+      }
+    }
+    // Ajouter au cache une fois téléchargé
+    downloadedModelsCache.add(model);
+  }
 
   const url = "http://localhost:11434/api/chat";
   const payload = {
@@ -301,7 +432,6 @@ export async function fetchResponseFromModelHuggingFace(
   model: SupportedModels,
   params: CommonMessageCreateParams,
 ): Promise<Response> {
-  console.log("fetchResponseFromModelHuggingFace with model:", model);
   const key = useAppState.getState().settings.huggingFaceKey;
   if (!key) {
     throw new Error("No Hugging Face key found");
@@ -310,57 +440,56 @@ export async function fetchResponseFromModelHuggingFace(
   const client = new HfInference(key);
 
   try {
-    const systemPrompt = `${params.systemMessage || ""}\n\nIMPORTANT: You MUST respond in this exact JSON format:
-{
-  "thought": "your reasoning here",
-  "action": {
-    "name": "actionName",
-    "args": {
-      "key": "value"
-    }
-  }
-}`;
+    const MAX_CONTEXT_LENGTH = 4096;
+    const MAX_NEW_TOKENS = 500;
+    const RESERVE_TOKENS = MAX_NEW_TOKENS + 100; // Reserve some tokens for system message and response
 
-    const messages = [
+    // Calculate available tokens for input
+    const MAX_INPUT_TOKENS = MAX_CONTEXT_LENGTH - RESERVE_TOKENS;
+
+    // Prepare messages
+    let messages = [
       {
         role: "system",
-        content: [
-          {
-            type: "text",
-            text: systemPrompt,
-          },
-        ],
+        content: params.systemMessage || "",
       },
       {
         role: "user",
-        content: [
-          {
-            type: "text",
-            text: params.prompt,
-          },
-          ...(params.imageData
-            ? [
-                {
-                  type: "image_url",
-                  image_url: { url: params.imageData },
-                },
-              ]
-            : []),
-        ],
+        content: params.prompt,
       },
     ];
 
-    console.log(
-      "Sending request to HF with messages:",
-      JSON.stringify(messages, null, 2),
-    );
+    // Truncate prompt if needed
+    if (params.prompt.length > MAX_INPUT_TOKENS) {
+      messages[1].content = params.prompt.substring(0, MAX_INPUT_TOKENS);
+    }
 
-    const chatCompletion = await client.chatCompletion({
+    // Add image if present
+    if (params.imageData) {
+      messages[1].content = JSON.stringify([
+        {
+          type: "text",
+          text: messages[1].content,
+        },
+        {
+          type: "image_url",
+          image_url: params.imageData,
+        },
+      ]);
+    }
+
+    const chatCompletion = await client.textGenerationStream({
       model: model,
-      messages,
-      max_tokens: 500,
-      temperature: 0.7,
-      response_format: { type: "json_object" },
+      inputs: JSON.stringify({
+        messages,
+        max_tokens: MAX_NEW_TOKENS,
+        temperature: 0.7,
+        response_format: { type: "json_object" },
+      }),
+      parameters: {
+        return_full_text: false,
+        max_new_tokens: MAX_NEW_TOKENS,
+      },
     });
 
     console.log("Raw HF response:", chatCompletion);

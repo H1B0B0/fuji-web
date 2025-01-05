@@ -50,7 +50,15 @@ const Settings = ({ setInSettingsView }: SettingsProps) => {
   }));
   const toast = useToast();
 
-  if (!state.openAIKey && !state.anthropicKey) return null;
+  const hasAnyAPIKey =
+    state.openAIKey ||
+    state.anthropicKey ||
+    state.geminiKey ||
+    state.huggingFaceKey;
+
+  if (!hasAnyAPIKey && view !== "api") {
+    setView("api");
+  }
 
   const closeSetting = () => setInSettingsView(false);
   const openCKB = () => setView("knowledge");
