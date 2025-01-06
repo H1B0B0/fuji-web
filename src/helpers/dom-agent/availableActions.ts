@@ -42,6 +42,42 @@ export const availableActions = [
       },
     ],
   },
+  {
+    name: "scroll",
+    description:
+      'Scroll the page to see the other parts. Use "up" or "down" to scroll 2/3 of height of the window. Use "top" or "bottom" to quickly scroll to the top or bottom of the page.',
+    args: [
+      {
+        name: "direction",
+        type: "string",
+      },
+    ],
+  },
+  {
+    name: "navigate",
+    description: "Navigate to a new page",
+    args: [
+      {
+        name: "url",
+        type: "string",
+      },
+    ],
+  },
+  {
+    name: "setValueAndEnter",
+    description:
+      'Like "setValue", except then it presses ENTER. Use this tool can submit the form when there\'s no "submit" button.',
+    args: [
+      {
+        name: "elementId",
+        type: "string",
+      },
+      {
+        name: "value",
+        type: "string",
+      },
+    ],
+  },
   ...commonActions,
 ] as const;
 

@@ -69,104 +69,54 @@ function parseFunctionCall(callString: string) {
   return { name, args };
 }
 
-function normalizeAction(action: any): { thought: string; action: string } {
-  const thought = action.thought || "Performing action";
+export function parseResponse(text: string): ParsedResponse {
+  let action;
+  try {
+    action = JSON.parse(text);
+  } catch (_e) {
+    try {
+      action = JSON.parse(extractJsonFromMarkdown(text)[0]);
+    } catch (_e) {
+      throw new Error("Response does not contain valid JSON.");
+    }
+  }
 
-  // Case 1: Handle direct click with target_id
-  if (action.action === "click" && action.target_id) {
+  if (!action.thought) {
     return {
-      thought,
-      action: `click(${action.target_id})`,
+      error: "Invalid response: Thought not found in the model response.",
     };
   }
 
-  // Case 2: Handle uid format
-  if (typeof action.action === "string") {
-    const uidMatch = action.action.match(/uid=(\d+)/);
-    if (uidMatch) {
-      return {
-        thought,
-        action: `click(${uidMatch[1]})`,
-      };
-    }
+  // Handle both JSON object and function-call string formats
+  const actionData =
+    typeof action.action === "string"
+      ? parseFunctionCall(action.action)
+      : {
+          name: action.action.name,
+          args: Object.values(action.action.args),
+        };
+
+  const availableAction = availableActions.find(
+    (a) => a.name === actionData.name,
+  );
+
+  if (!availableAction) {
+    return {
+      error: `Invalid action: "${actionData.name}" is not a valid action.`,
+    };
   }
 
-  // Case 3: Already correct format
+  const parsedAction = {
+    name: availableAction.name,
+    args: actionData.args,
+  } as ActionPayload;
+
   return {
-    thought,
-    action: action.action,
+    thought: action.thought,
+    action:
+      typeof action.action === "string"
+        ? action.action
+        : JSON.stringify(action.action),
+    parsedAction,
   };
-}
-
-interface ParsedActionSuccess {
-  name: string;
-  args: Record<string, string>;
-}
-
-export function parseResponse(
-  response: string,
-): ParsedResponseSuccess | { error: string } {
-  try {
-    // Clean and parse JSON
-    const parsed = JSON.parse(response.trim());
-
-    if (!parsed.thought || typeof parsed.thought !== "string") {
-      return { error: "Missing or invalid 'thought' field" };
-    }
-
-    // Vérifier si l'action est un objet avec name et args
-    if (
-      parsed.action &&
-      typeof parsed.action === "object" &&
-      parsed.action.name &&
-      parsed.action.args
-    ) {
-      return {
-        thought: parsed.thought,
-        parsedAction: {
-          name: parsed.action.name,
-          args: parsed.action.args,
-        },
-      };
-    }
-
-    // Format alternatif où l'action est une chaîne de caractères
-    const actionStr = parsed.action;
-    if (!actionStr || typeof actionStr !== "string") {
-      return { error: "Missing or invalid 'action' field" };
-    }
-
-    // Parse action string
-    const match = actionStr.match(/^(\w+)\((.*)\)$/);
-    if (!match) {
-      return { error: "Invalid action format" };
-    }
-
-    const [_, name, argsStr] = match;
-
-    try {
-      let args: Record<string, string | number> = {};
-      if (argsStr.trim()) {
-        args = JSON.parse(`{${argsStr}}`);
-      }
-
-      const stringArgs: Record<string, string> = {};
-      Object.entries(args).forEach(([key, value]) => {
-        stringArgs[key] = String(value);
-      });
-
-      return {
-        thought: parsed.thought,
-        parsedAction: {
-          name: name,
-          args: stringArgs,
-        },
-      };
-    } catch (e) {
-      return { error: "Invalid arguments format" };
-    }
-  } catch (e) {
-    console.error("Parse error:", e);
-    return { error: "Invalid JSON response" };
-  }
 }

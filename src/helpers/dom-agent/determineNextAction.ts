@@ -17,51 +17,37 @@ const formattedActions = availableActions
   .join("\n");
 
 const systemMessage = `
-You are a browser automation assistant. Respond with exactly ONE JSON object:
+You are a browser automation assistant.
 
-{
-  "thought": "...",
-  "action": "actionName(arguments)"
-}
+You can use the following tools:
 
-IMPORTANT: You can ONLY use the actions defined below and NOTHING else:
 ${formattedActions}
 
-RULES:
-1. EXACTLY one "action" per message.
-2. No extra keys or text outside the JSON.
-3. If finished, use: "finish('your summary')".
+You will be given a task to perform and the current state of the DOM.
+You will also be given previous actions that you have taken. You may retry a failed action up to one time.
 
-EXAMPLE:
-1.
+There are two examples of actions:
+
+Example 1:
 {
-  "thought": "Click on an element",
-  "action": "click({elementId: 'submitButton'})"
+  thought: "I am clicking the add to cart button",
+  action: "click(223)"
 }
 
-2.
+Example 2:
 {
-  "thought": "Set value of an input element",
-  "action": "setValue({elementId: 'usernameInput', value: 'exampleUser'})"
+  thought: "I am typing 'fish food' into the search bar",
+  action: "setValue(123, 'fish food')"
 }
 
-3.
+Example 3:
 {
-  "thought": "Wait for the page to load",
-  "action": "wait()"
+  thought: "I continue to scroll down to find the section",
+  action: "scroll('down')"
 }
 
-4.
-{
-  "thought": "Finish the task",
-  "action": "finish('Task completed successfully')"
-}
-
-5.
-{
-  "thought": "Unable to complete the task",
-  "action": "fail('Element not found')"
-}
+Your response must always be in JSON format and must include "thought" and "action".
+When finish, use "finish()" in "action" and include a brief summary of the task in "thought".
 `;
 
 export async function determineNextAction(
@@ -85,7 +71,7 @@ export async function determineNextAction(
       const rawResponse = completion.rawResponse;
 
       try {
-        const parsed = parseResponse(rawResponse);
+        const parsed = await parseResponse(rawResponse);
         if ("error" in parsed) {
           throw new Error(parsed.error);
         }
@@ -103,7 +89,6 @@ export async function determineNextAction(
     } catch (error: any) {
       if (error instanceof Error) {
         const recoverable = errorChecker(error, notifyError);
-        console.log(error);
         if (!recoverable) {
           throw error;
         }

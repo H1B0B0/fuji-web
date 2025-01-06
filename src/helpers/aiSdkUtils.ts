@@ -4,6 +4,7 @@ import OpenAI from "openai";
 import { useAppState } from "../state/store";
 import { enumValues } from "./utils";
 import { HfInference } from "@huggingface/inference";
+import { extractJsonFromMarkdown } from "./dom-agent/parseResponse";
 
 // Ajouter les actions autorisées en constante
 const VALID_ACTIONS = [
@@ -464,41 +465,6 @@ async function validateAndResizeImage(
   });
 }
 
-// Nouveau validateur commun
-function validateAIResponse(response: any): string {
-  try {
-    const parsed = JSON.parse(response);
-
-    if (
-      typeof parsed?.thought !== "string" ||
-      !parsed?.action ||
-      !VALID_ACTIONS.includes(parsed.action.name as any) ||
-      typeof parsed.action.args !== "object"
-    ) {
-      // Réponse invalide => forcer fail
-      return JSON.stringify({
-        thought: "Invalid or unauthorized action attempted",
-        action: {
-          name: "fail",
-          args: {
-            reason: "Only specific actions are allowed",
-          },
-        },
-      });
-    }
-    return response; // OK
-  } catch {
-    // JSON non valide => forcer fail
-    return JSON.stringify({
-      thought: "Error: Invalid JSON",
-      action: {
-        name: "fail",
-        args: { reason: "Response was not valid JSON" },
-      },
-    });
-  }
-}
-
 export async function fetchResponseFromModelOllama(
   model: SupportedModels,
   params: CommonMessageCreateParams,
@@ -551,45 +517,8 @@ export async function fetchResponseFromModelOllama(
     }
   }
 
-  const systemPrompt = `${params.systemMessage || ""}
-  IMPORTANT: You are a web automation assistant. You MUST follow these rules:
-  
-  1. You can ONLY use these specific actions:
-  - click: To click on an element
-  - setValue: To set a value in an input field
-  - setValueAndEnter: To set a value and press enter
-  - navigate: To navigate to a URL
-  - scroll: To scroll the page
-  - wait: To wait for 3 seconds
-  - finish: To complete the task
-  - fail: To indicate failure
-  
-  2. Your response MUST be in this exact JSON format:
-  {
-    "thought": "Brief explanation of what you're doing",
-    "action": {
-      "name": one of the actions listed above,
-      "args": {
-        "key": "value" (appropriate arguments for the action)
-      }
-    }
-  }
-
-  3. DO NOT invent new actions or add extra fields.
-  4. DO NOT try to provide information directly - use the available actions to interact with the web page.
-  5. If you cannot perform an action using the allowed commands, use "fail" with an explanation.
-
-  Example for searching:
-  {
-    "thought": "I will enter the search query",
-    "action": {
-      "name": "setValue",
-      "args": {
-        "elementId": "searchInput",
-        "value": "search term"
-      }
-    }
-  }`;
+  // Handle system message
+  const systemPrompt = params.systemMessage || "";
 
   console.log("Debug Image Content:", imageContent);
 
@@ -884,7 +813,6 @@ export async function fetchResponseFromModelOpenAI(
   });
   let rawResponse = completion.choices[0].message?.content?.trim() ?? "";
   // Valider le JSON
-  rawResponse = validateAIResponse(rawResponse);
   return {
     usage: completion.usage,
     rawResponse,
@@ -957,7 +885,6 @@ export async function fetchResponseFromModelAnthropic(
     rawResponse = "{" + rawResponse;
   }
   // Valider le JSON
-  rawResponse = validateAIResponse(rawResponse);
   return {
     usage: {
       completion_tokens: completion.usage.output_tokens,
@@ -993,9 +920,16 @@ export async function fetchResponseFromModelGoogle(
     });
   }
   const result = await client.generateContent(requestInput);
-  let rawResponse = result.response.text();
+  const response = result.response;
+  let rawResponse = response.text();
+  console.log("Google response:", rawResponse);
+
+  // Extract JSON from markdown if needed
+  const jsonMatches = extractJsonFromMarkdown(rawResponse);
+  if (jsonMatches.length > 0) {
+    rawResponse = jsonMatches[0];
+  }
   // Valider le JSON
-  rawResponse = validateAIResponse(rawResponse);
   return {
     usage: {
       completion_tokens:
