@@ -464,6 +464,41 @@ async function validateAndResizeImage(
   });
 }
 
+// Nouveau validateur commun
+function validateAIResponse(response: any): string {
+  try {
+    const parsed = JSON.parse(response);
+
+    if (
+      typeof parsed?.thought !== "string" ||
+      !parsed?.action ||
+      !VALID_ACTIONS.includes(parsed.action.name as any) ||
+      typeof parsed.action.args !== "object"
+    ) {
+      // Réponse invalide => forcer fail
+      return JSON.stringify({
+        thought: "Invalid or unauthorized action attempted",
+        action: {
+          name: "fail",
+          args: {
+            reason: "Only specific actions are allowed",
+          },
+        },
+      });
+    }
+    return response; // OK
+  } catch {
+    // JSON non valide => forcer fail
+    return JSON.stringify({
+      thought: "Error: Invalid JSON",
+      action: {
+        name: "fail",
+        args: { reason: "Response was not valid JSON" },
+      },
+    });
+  }
+}
+
 export async function fetchResponseFromModelOllama(
   model: SupportedModels,
   params: CommonMessageCreateParams,
@@ -848,9 +883,8 @@ export async function fetchResponseFromModelOpenAI(
     // temperature: 0,
   });
   let rawResponse = completion.choices[0].message?.content?.trim() ?? "";
-  if (params.jsonMode && !rawResponse.startsWith("{")) {
-    rawResponse = "{" + rawResponse;
-  }
+  // Valider le JSON
+  rawResponse = validateAIResponse(rawResponse);
   return {
     usage: completion.usage,
     rawResponse,
@@ -922,6 +956,8 @@ export async function fetchResponseFromModelAnthropic(
   if (params.jsonMode && !rawResponse.startsWith("{")) {
     rawResponse = "{" + rawResponse;
   }
+  // Valider le JSON
+  rawResponse = validateAIResponse(rawResponse);
   return {
     usage: {
       completion_tokens: completion.usage.output_tokens,
@@ -957,6 +993,9 @@ export async function fetchResponseFromModelGoogle(
     });
   }
   const result = await client.generateContent(requestInput);
+  let rawResponse = result.response.text();
+  // Valider le JSON
+  rawResponse = validateAIResponse(rawResponse);
   return {
     usage: {
       completion_tokens:
@@ -964,30 +1003,73 @@ export async function fetchResponseFromModelGoogle(
       prompt_tokens: result.response.usageMetadata?.promptTokenCount ?? 0,
       total_tokens: result.response.usageMetadata?.totalTokenCount ?? 0,
     },
-    rawResponse: result.response.text(),
+    rawResponse,
   };
+}
+
+const MAX_RETRIES = 2;
+
+function getStrictSystemPrompt(baseMessage: string = ""): string {
+  return `
+${baseMessage}
+IMPORTANT: You are a web automation assistant. These are the rules you MUST follow:
+
+1. Only use these actions: click, setValue, setValueAndEnter, navigate, scroll, wait, finish, fail.
+2. Output MUST be valid JSON, with "thought" (string) and "action" (object containing "name" and "args").
+3. Do NOT invent new actions or add any extra fields.
+4. Do NOT provide direct info; only use the allowed actions.
+5. If you cannot fulfill the request with these actions, use "fail" with a reason.
+6. Absolutely avoid extra text or explanation outside the JSON object, and do NOT produce a second JSON object.
+`.trim();
 }
 
 export async function fetchResponseFromModel(
   model: SupportedModels,
   params: CommonMessageCreateParams,
 ): Promise<Response> {
-  console.log("fetchResponseFromModel with model:", model);
   const sdk = chooseSDK(model);
-  console.log("fetchResponseFromModel with sdk:", sdk);
-  if (sdk === "OpenAI") {
-    return await fetchResponseFromModelOpenAI(model, params);
-  } else if (sdk === "Anthropic") {
-    return await fetchResponseFromModelAnthropic(model, params);
-  } else if (sdk === "Google") {
-    return await fetchResponseFromModelGoogle(model, params);
-  } else if (sdk === "Ollama") {
-    return await fetchResponseFromModelOllama(model, params);
-  } else if (sdk === "HuggingFace") {
-    return await fetchResponseFromModelHuggingFace(model, params);
-  } else {
-    throw new Error("Unsupported model");
+
+  // On réessaie jusqu'à MAX_RETRIES si la réponse est invalide
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    // Injecte notre prompt plus strict
+    const strictParams = {
+      ...params,
+      systemMessage: getStrictSystemPrompt(params.systemMessage),
+    };
+
+    let response: Response;
+    if (sdk === "OpenAI") {
+      response = await fetchResponseFromModelOpenAI(model, strictParams);
+    } else if (sdk === "Anthropic") {
+      response = await fetchResponseFromModelAnthropic(model, strictParams);
+    } else if (sdk === "Google") {
+      response = await fetchResponseFromModelGoogle(model, strictParams);
+    } else if (sdk === "Ollama") {
+      response = await fetchResponseFromModelOllama(model, strictParams);
+    } else if (sdk === "HuggingFace") {
+      response = await fetchResponseFromModelHuggingFace(model, strictParams);
+    } else {
+      throw new Error("Unsupported model");
+    }
+    // Vérifie si le modèle a renvoyé un "fail" ou une action valide
+    const parsed = JSON.parse(response.rawResponse);
+    if (parsed.action.name !== "fail") {
+      return response; // OK
+    }
+    // Sinon, on réessaie
   }
+
+  // Après tous les essais, on force un "fail"
+  return {
+    usage: undefined,
+    rawResponse: JSON.stringify({
+      thought: "Too many invalid attempts",
+      action: {
+        name: "fail",
+        args: { reason: "Reached max retries with invalid actions" },
+      },
+    }),
+  };
 }
 
 export async function deleteOllamaModel(modelName: string): Promise<boolean> {

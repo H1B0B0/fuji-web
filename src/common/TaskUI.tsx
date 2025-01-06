@@ -154,7 +154,7 @@ const TaskUI = () => {
         borderRadius="xl"
         bg={bgColor}
         p={6}
-        mb={20}
+        mb={40}
         sx={{
           "&::-webkit-scrollbar": {
             width: "4px",
@@ -185,11 +185,13 @@ const TaskUI = () => {
               >
                 <FaRobot size="48px" />
               </Box>
-              <Text fontSize="lg" fontWeight="medium">
+              <Text fontSize="lg" fontWeight="medium" textAlign="center">
                 Start a conversation by entering your instructions below
               </Text>
             </Flex>
-            <RecommendedTasks runTask={runTaskWithNewInstructions} />
+            <Box w="100%" maxW="600px">
+              <RecommendedTasks runTask={runTaskWithNewInstructions} />
+            </Box>
           </VStack>
         ) : (
           <VStack spacing={6} align="stretch">
@@ -227,9 +229,6 @@ const TaskUI = () => {
                   >
                     <VStack align="stretch" spacing={3}>
                       <Box>
-                        <Text fontWeight="bold" mb={2}>
-                          Thought:
-                        </Text>
                         <Text>{entry.action.thought}</Text>
                       </Box>
                     </VStack>
