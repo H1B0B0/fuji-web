@@ -9,33 +9,26 @@ import {
   useToast,
   Flex,
   Avatar,
-  Card,
-  CardBody,
-  keyframes,
-  SlideFade,
+  Alert,
+  AlertIcon,
+  AlertDescription,
+  Spacer,
   useColorModeValue,
-  Container,
-  Textarea,
-  Tooltip,
 } from "@chakra-ui/react";
-import { ArrowUpIcon, CloseIcon, SmallCloseIcon } from "@chakra-ui/icons";
 import { FaRobot } from "react-icons/fa";
 import { useAppState } from "../state/store";
-import { useState, useRef, useEffect } from "react";
-import TaskStatus from "./TaskStatus";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
+import { debugMode } from "../constants";
+import RunTaskButton from "./RunTaskButton";
+import VoiceButton from "./VoiceButton";
+import TaskStatus from "./TaskStatus";
+import RecommendedTasks from "./RecommendedTasks";
+import AutosizeTextarea from "./AutosizeTextarea";
 
-// Animation pour les messages qui apparaissent
-const slideIn = keyframes`
-  from { transform: translateY(10px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-`;
-
-// Composant animé pour les messages
 const MessageContainer = motion(Box);
 
 const formatConversationTitle = (prompt: string): string => {
-  // Extract core content by removing system prefixes and timestamps
   const cleanTitle = prompt
     .replace(/^The user requests the following task:\s*/i, "")
     .replace(/Current time:.*$/i, "")
@@ -45,58 +38,90 @@ const formatConversationTitle = (prompt: string): string => {
       "",
     )
     .replace(/recherche/i, "")
-    .replace(/^\s+|\s+$/g, "") // Trim whitespace
-    .split("\n")[0]; // Take first line only
+    .replace(/^\s+|\s+$/g, "")
+    .split("\n")[0];
 
-  // Capitalize first letter
   return cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1);
 };
 
-const TaskUI = () => {
-  const [instructions, setInstructions] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-  const chatContainerRef = useRef<HTMLDivElement>(null);
-  const toast = useToast();
+const injectContentScript = async () => {
+  const [tab] = await chrome.tabs.query({ currentWindow: true, active: true });
+  if (!tab?.id) return;
+  await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    files: ["src/pages/contentInjected/index.js"],
+    world: "MAIN",
+  });
+};
 
-  const { history, status, runTask, interrupt } = useAppState((state) => ({
+function ActionExecutor() {
+  const state = useAppState((state) => ({
+    attachDebugger: state.currentTask.actions.attachDebugger,
+    detachDegugger: state.currentTask.actions.detachDebugger,
+    performActionString: state.currentTask.actions.performActionString,
+    prepareLabels: state.currentTask.actions.prepareLabels,
+    showImagePrompt: state.currentTask.actions.showImagePrompt,
+  }));
+
+  return (
+    <Box mt={4}>
+      <HStack spacing={2} py={3} borderTop="1px dashed" borderColor="gray.300">
+        <Button onClick={state.attachDebugger}>Attach</Button>
+        <Button onClick={state.prepareLabels}>Prepare</Button>
+        <Button onClick={state.showImagePrompt}>Show Image</Button>
+        <Button onClick={injectContentScript}>Inject</Button>
+      </HStack>
+    </Box>
+  );
+}
+
+const TaskUI = () => {
+  const state = useAppState((state) => ({
     history: state.currentTask.history,
     status: state.currentTask.status,
     runTask: state.currentTask.actions.runTask,
+    instructions: state.ui.instructions,
+    setInstructions: state.ui.actions.setInstructions,
+    voiceMode: state.settings.voiceMode,
+    isListening: state.currentTask.isListening,
+    maxActions: state.currentTask.maxActions,
+    setMaxActions: state.currentTask.actions.setMaxActions,
     interrupt: state.currentTask.actions.interrupt,
   }));
 
-  const handleSubmit = () => {
-    if (!instructions.trim()) {
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const toast = useToast();
+
+  const toastError = useCallback(
+    (message: string) => {
       toast({
         title: "Error",
-        description: "Please enter instructions",
+        description: message,
         status: "error",
-        duration: 3000,
+        duration: 5000,
       });
+    },
+    [toast],
+  );
+
+  const handleSubmit = () => {
+    if (!state.instructions?.trim()) {
+      toastError("Please enter instructions");
       return;
     }
 
-    if (status === "running") {
-      interrupt();
+    if (state.status === "running") {
+      state.interrupt();
     } else {
-      runTask((error) =>
-        toast({
-          title: "Error",
-          description: error,
-          status: "error",
-          duration: 5000,
-        }),
-      );
+      state.runTask(toastError);
     }
   };
 
-  useEffect(() => {
-    // Scroll to bottom when new messages arrive
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop =
-        chatContainerRef.current.scrollHeight;
-    }
-  }, [history]);
+  const runTaskWithNewInstructions = (newInstructions: string = "") => {
+    if (!newInstructions) return;
+    state.setInstructions(newInstructions);
+    state.runTask(toastError);
+  };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -105,21 +130,22 @@ const TaskUI = () => {
     }
   };
 
-  const handleResize = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const textarea = e.target;
-    textarea.style.height = "auto";
-    textarea.style.height = `${textarea.scrollHeight}px`;
-    setInstructions(e.target.value);
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop =
+        chatContainerRef.current.scrollHeight;
+    }
+  }, [state.history]);
+
+  const handleMaxActionsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.replace(/\D/g, "");
+    state.setMaxActions(parseInt(value, 10) || 0);
   };
 
   const bgColor = useColorModeValue("gray.50", "gray.700");
-  const cardBg = useColorModeValue("white", "gray.600");
-  const aiBg = useColorModeValue("blue.50", "blue.900");
-  const borderColor = useColorModeValue("gray.200", "gray.600");
 
   return (
     <VStack h="calc(100vh - 200px)" spacing={4} w="100%">
-      {/* Chat Container */}
       <Box
         ref={chatContainerRef}
         flex="1"
@@ -142,29 +168,31 @@ const TaskUI = () => {
           },
         }}
       >
-        {history.length === 0 ? (
-          <Flex
-            h="100%"
-            direction="column"
-            align="center"
-            justify="center"
-            color="gray.500"
-            gap={4}
-          >
-            <Box
-              p={6}
-              borderRadius="full"
-              bg={useColorModeValue("gray.100", "gray.700")}
+        {state.history.length === 0 ? (
+          <VStack spacing={6}>
+            <Flex
+              h="100%"
+              direction="column"
+              align="center"
+              justify="center"
+              color="gray.500"
+              gap={4}
             >
-              <FaRobot size="48px" />
-            </Box>
-            <Text fontSize="lg" fontWeight="medium">
-              Start a conversation by entering your instructions below
-            </Text>
-          </Flex>
+              <Box
+                p={6}
+                borderRadius="full"
+                bg={useColorModeValue("gray.100", "gray.700")}
+              >
+                <FaRobot size="48px" />
+              </Box>
+              <Text fontSize="lg" fontWeight="medium">
+                Start a conversation by entering your instructions below
+              </Text>
+            </Flex>
+            <RecommendedTasks runTask={runTaskWithNewInstructions} />
+          </VStack>
         ) : (
           <VStack spacing={6} align="stretch">
-            {/* Conversation Title */}
             <Box mb={4} textAlign="center">
               <Text
                 fontSize="xl"
@@ -172,7 +200,7 @@ const TaskUI = () => {
                 color={useColorModeValue("gray.700", "gray.300")}
                 pb={2}
               >
-                {formatConversationTitle(history[0].prompt)}
+                {formatConversationTitle(state.history[0].prompt)}
               </Text>
               <Box
                 borderBottom="2px"
@@ -180,7 +208,7 @@ const TaskUI = () => {
               />
             </Box>
 
-            {history.map((entry, index) => (
+            {state.history.map((entry, index) => (
               <MessageContainer
                 key={index}
                 initial={{ opacity: 0, y: 20 }}
@@ -188,14 +216,7 @@ const TaskUI = () => {
                 transition={{ duration: 0.3, delay: index * 0.1 }}
               >
                 <HStack align="start">
-                  <Avatar
-                    size="sm"
-                    icon={<FaRobot />}
-                    bg="purple.500"
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ type: "spring", stiffness: 260, damping: 20 }}
-                  />
+                  <Avatar size="sm" icon={<FaRobot />} bg="purple.500" />
                   <MessageContainer
                     flex={1}
                     bg={useColorModeValue("blue.50", "blue.900")}
@@ -203,10 +224,6 @@ const TaskUI = () => {
                     borderRadius="lg"
                     borderWidth="1px"
                     borderColor={useColorModeValue("blue.200", "blue.700")}
-                    initial={{ x: 20, opacity: 0 }}
-                    animate={{ x: 0, opacity: 1 }}
-                    transition={{ duration: 0.2, delay: 0.1 }}
-                    _hover={{ shadow: "md" }}
                   >
                     <VStack align="stretch" spacing={3}>
                       <Box>
@@ -224,7 +241,6 @@ const TaskUI = () => {
         )}
       </Box>
 
-      {/* Input Area - Fixed to bottom with full width */}
       <Box position="fixed" bottom="80px" left={0} right={0} px={4} zIndex={1}>
         <Box
           maxW="container.xl"
@@ -234,43 +250,46 @@ const TaskUI = () => {
           boxShadow="lg"
           p={4}
         >
-          <HStack spacing={3}>
-            <Box flex={1} position="relative">
-              <Input
-                ref={inputRef}
-                placeholder="What would you like me to do?"
-                value={instructions}
-                onChange={(e) => setInstructions(e.target.value)}
-                onKeyPress={handleKeyPress}
-                size="lg"
-                fontSize="sm"
-                lineHeight="normal"
-                bg={useColorModeValue("gray.50", "gray.700")}
-                border="2px solid"
-                borderColor={useColorModeValue("gray.200", "gray.600")}
-                _focus={{
-                  borderColor: "blue.400",
-                  boxShadow: "0 0 0 1px var(--chakra-colors-blue-400)",
-                }}
-                pr={instructions ? "0.5rem" : "inherit"}
+          <VStack spacing={3}>
+            <AutosizeTextarea
+              autoFocus
+              placeholder="What would you like me to do?"
+              value={state.instructions || ""}
+              onChange={(e) => state.setInstructions(e.target.value)}
+              isDisabled={state.status === "running" || state.isListening}
+              onKeyDown={handleKeyPress}
+            />
+            <HStack w="100%">
+              <RunTaskButton
+                runTask={handleSubmit}
+                disabled={state.maxActions === 0}
               />
-            </Box>
-            <Button
-              colorScheme="blue"
-              size="lg"
-              px={8}
-              isDisabled={!instructions.trim()}
-              leftIcon={<ArrowUpIcon />}
-              onClick={handleSubmit}
-              _hover={{
-                transform: "translateY(-2px)",
-              }}
-              transition="all 0.2s"
-            >
-              {status === "running" ? "Stop" : "Send"}
-            </Button>
-          </HStack>
+              {state.voiceMode && (
+                <VoiceButton
+                  taskInProgress={state.status === "running"}
+                  onStopSpeaking={handleSubmit}
+                />
+              )}
+              <Spacer />
+              <Input
+                type="number"
+                value={state.maxActions}
+                onChange={handleMaxActionsChange}
+                placeholder="Max Actions"
+                width="100px"
+              />
+            </HStack>
+            {state.voiceMode && (
+              <Alert status="info" borderRadius="lg">
+                <AlertIcon />
+                <AlertDescription fontSize="sm">
+                  Press Space to start/stop speaking
+                </AlertDescription>
+              </Alert>
+            )}
+          </VStack>
           <TaskStatus />
+          {debugMode && <ActionExecutor />}
         </Box>
       </Box>
     </VStack>

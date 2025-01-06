@@ -5,6 +5,20 @@ import { useAppState } from "../state/store";
 import { enumValues } from "./utils";
 import { HfInference } from "@huggingface/inference";
 
+// Ajouter les actions autorisées en constante
+const VALID_ACTIONS = [
+  "click",
+  "setValue",
+  "setValueAndEnter",
+  "navigate",
+  "scroll",
+  "wait",
+  "finish",
+  "fail",
+] as const;
+
+type ValidActionType = (typeof VALID_ACTIONS)[number];
+
 export enum AgentMode {
   // Vision = "vision",
   VisionEnhanced = "vision-enhanced",
@@ -222,7 +236,7 @@ export async function listOllamaModels(): Promise<OllamaModelInfo[]> {
     return (data.models || []).map((model: any) => ({
       ...model,
       name: model.name || model.model, // Certains modèles utilisent 'model' au lieu de 'name'
-      status: "downloaded" // Si le modèle est listé, il est considéré comme téléchargé
+      status: "downloaded", // Si le modèle est listé, il est considéré comme téléchargé
     }));
   } catch (error) {
     console.error("Error listing Ollama models:", error);
@@ -369,15 +383,17 @@ export async function createCustomOllamaModel(
 export const refreshOllamaModelsCache = async (): Promise<void> => {
   try {
     const models = await listOllamaModels();
-    
+
     downloadedModelsCache.clear();
-    
+
     // Filtrer et traiter les modèles
     models.forEach((model) => {
       // Vérifier si le modèle est un modèle valide
       if (model.name) {
         const normalizedName = normalizeModelName(model.name);
-        console.log(`Processing model: ${normalizedName}, status: ${model.status}`);
+        console.log(
+          `Processing model: ${normalizedName}, status: ${model.status}`,
+        );
         if (normalizedName) {
           downloadedModelsCache.add(normalizedName);
           console.log(`Added model to cache: ${normalizedName}`);
@@ -501,13 +517,41 @@ export async function fetchResponseFromModelOllama(
   }
 
   const systemPrompt = `${params.systemMessage || ""}
-  IMPORTANT: You must respond in the following JSON format with one of these specific actions:
+  IMPORTANT: You are a web automation assistant. You MUST follow these rules:
+  
+  1. You can ONLY use these specific actions:
+  - click: To click on an element
+  - setValue: To set a value in an input field
+  - setValueAndEnter: To set a value and press enter
+  - navigate: To navigate to a URL
+  - scroll: To scroll the page
+  - wait: To wait for 3 seconds
+  - finish: To complete the task
+  - fail: To indicate failure
+  
+  2. Your response MUST be in this exact JSON format:
   {
-    "thought": "your reasoning here",
+    "thought": "Brief explanation of what you're doing",
     "action": {
-      "name": "click" | "setValue" | "setValueAndEnter" | "navigate" | "scroll" | "wait" | "finish" | "fail",
+      "name": one of the actions listed above,
       "args": {
-        "key": "value"
+        "key": "value" (appropriate arguments for the action)
+      }
+    }
+  }
+
+  3. DO NOT invent new actions or add extra fields.
+  4. DO NOT try to provide information directly - use the available actions to interact with the web page.
+  5. If you cannot perform an action using the allowed commands, use "fail" with an explanation.
+
+  Example for searching:
+  {
+    "thought": "I will enter the search query",
+    "action": {
+      "name": "setValue",
+      "args": {
+        "elementId": "searchInput",
+        "value": "search term"
       }
     }
   }`;
@@ -554,6 +598,17 @@ export async function fetchResponseFromModelOllama(
     },
   };
 
+  // Ajouter une validation plus stricte de la réponse
+  const validateResponse = (response: any): boolean => {
+    if (!response || typeof response !== "object") return false;
+    if (typeof response.thought !== "string") return false;
+    if (!response.action || typeof response.action !== "object") return false;
+    if (!VALID_ACTIONS.includes(response.action.name)) return false;
+    if (!response.action.args || typeof response.action.args !== "object")
+      return false;
+    return true;
+  };
+
   try {
     console.log("Sending payload to Ollama:", JSON.stringify(payload, null, 2));
 
@@ -580,29 +635,15 @@ export async function fetchResponseFromModelOllama(
     // Ensure the response is valid JSON and has correct action
     try {
       const parsed = JSON.parse(formattedResponse);
-      const validActions = [
-        "click",
-        "setValue",
-        "setValueAndEnter",
-        "navigate",
-        "scroll",
-        "wait",
-        "finish",
-        "fail",
-      ];
 
-      if (
-        !parsed.thought ||
-        !parsed.action ||
-        !parsed.action.name ||
-        !validActions.includes(parsed.action.name)
-      ) {
+      if (!validateResponse(parsed)) {
         formattedResponse = JSON.stringify({
-          thought: "Error: Invalid response format",
+          thought: "Invalid action attempted. Using only allowed actions.",
           action: {
             name: "fail",
             args: {
-              reason: "Model response did not include valid action",
+              reason:
+                "Attempted to use invalid action. Only specific web automation actions are allowed.",
             },
           },
         });
