@@ -4,8 +4,24 @@ import { immer } from "zustand/middleware/immer";
 import { createJSONStorage, devtools, persist } from "zustand/middleware";
 import { createCurrentTaskSlice, CurrentTaskSlice } from "./currentTask";
 import { createUiSlice, UiSlice } from "./ui";
-import { createSettingsSlice, SettingsSlice } from "./settings";
 import { findBestMatchingModel } from "../helpers/aiSdkUtils";
+
+export type SettingsSlice = {
+  openAIKey: string;
+  anthropicKey: string;
+  geminiKey: string;
+  huggingFaceKey: string;
+  openAIBaseUrl: string;
+  anthropicBaseUrl: string;
+  agentMode: string;
+  selectedModel: string;
+  voiceMode: string;
+  customKnowledgeBase: string;
+  maxActions: number;
+  actions: {
+    update: (settings: Partial<Omit<SettingsSlice, "actions">>) => void;
+  };
+};
 
 export type StoreType = {
   currentTask: CurrentTaskSlice;
@@ -19,6 +35,29 @@ export type MyStateCreator<T> = StateCreator<
   [],
   T
 >;
+
+export const createSettingsSlice: MyStateCreator<SettingsSlice> = (set) => ({
+  openAIKey: "",
+  anthropicKey: "",
+  geminiKey: "",
+  huggingFaceKey: "",
+  openAIBaseUrl: "",
+  anthropicBaseUrl: "",
+  agentMode: "",
+  selectedModel: "",
+  voiceMode: "",
+  customKnowledgeBase: "",
+  maxActions: 50, // valeur par défaut
+  actions: {
+    update: (settings) =>
+      set((state) => {
+        Object.assign(state.settings, settings);
+        if (settings.maxActions) {
+          state.currentTask.maxActions = settings.maxActions;
+        }
+      }),
+  },
+});
 
 export const useAppState = create<StoreType>()(
   persist(

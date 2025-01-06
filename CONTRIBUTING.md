@@ -40,7 +40,7 @@ Before submitting your first code contribution, please make sure to:
 
 - Ensure that your code follows the project's coding conventions and is properly documented.
 - Include screenshots or animated GIFs in your pull request whenever possible, especially for UI-related changes.
-- Follow the [Pull Request Template](https://github.com/normal-computing/fuji-web/PULL_REQUEST_TEMPLATE.md) provided in the repository for the description of your pull request.
+- Follow the [Pull Request Template](https://github.com/H1B0B0/fuji-web) provided in the repository for the description of your pull request.
 
 ### Code Review Process
 

@@ -31,5 +31,5 @@ jobs:
 
       - uses: actions/upload-artifact@v3
         with:
-          name: fuji-extension
+          name: better-fuji-extension
           path: dist/*

@@ -98,93 +98,75 @@ function normalizeAction(action: any): { thought: string; action: string } {
   };
 }
 
-export function parseResponse(text: string): ParsedResponse {
-  let action;
-  // Clean up response - remove anything after JSON
-  const jsonEndIndex = text.lastIndexOf("}");
-  text = jsonEndIndex !== -1 ? text.substring(0, jsonEndIndex + 1) : text;
+interface ParsedActionSuccess {
+  name: string;
+  args: Record<string, string>;
+}
 
+export function parseResponse(
+  response: string,
+): ParsedResponseSuccess | { error: string } {
   try {
-    action = JSON.parse(text);
-  } catch (_e) {
-    action = JSON.parse(extractJsonFromMarkdown(text)[0]);
+    // Clean and parse JSON
+    const parsed = JSON.parse(response.trim());
+
+    if (!parsed.thought || typeof parsed.thought !== "string") {
+      return { error: "Missing or invalid 'thought' field" };
+    }
+
+    // Vérifier si l'action est un objet avec name et args
+    if (
+      parsed.action &&
+      typeof parsed.action === "object" &&
+      parsed.action.name &&
+      parsed.action.args
+    ) {
+      return {
+        thought: parsed.thought,
+        parsedAction: {
+          name: parsed.action.name,
+          args: parsed.action.args,
+        },
+      };
+    }
+
+    // Format alternatif où l'action est une chaîne de caractères
+    const actionStr = parsed.action;
+    if (!actionStr || typeof actionStr !== "string") {
+      return { error: "Missing or invalid 'action' field" };
+    }
+
+    // Parse action string
+    const match = actionStr.match(/^(\w+)\((.*)\)$/);
+    if (!match) {
+      return { error: "Invalid action format" };
+    }
+
+    const [_, name, argsStr] = match;
+
+    try {
+      let args: Record<string, string | number> = {};
+      if (argsStr.trim()) {
+        args = JSON.parse(`{${argsStr}}`);
+      }
+
+      const stringArgs: Record<string, string> = {};
+      Object.entries(args).forEach(([key, value]) => {
+        stringArgs[key] = String(value);
+      });
+
+      return {
+        thought: parsed.thought,
+        parsedAction: {
+          name: name,
+          args: stringArgs,
+        },
+      };
+    } catch (e) {
+      return { error: "Invalid arguments format" };
+    }
+  } catch (e) {
+    console.error("Parse error:", e);
+    return { error: "Invalid JSON response" };
   }
-
-  // Normalize action format
-  const normalized = normalizeAction(action);
-  action = normalized;
-
-  // Continue with existing validation
-  if (!action.thought) {
-    return {
-      error: "Invalid response: Thought not found in the model response.",
-    };
-  }
-
-  if (!action.action) {
-    return {
-      error: "Invalid response: Action not found in the model response.",
-    };
-  }
-
-  const thought = action.thought;
-  const actionString = action.action;
-
-  const { name: actionName, args: argsArray } = parseFunctionCall(actionString);
-  console.log(actionName, argsArray);
-
-  const availableAction = availableActions.find(
-    (action) => action.name === actionName,
-  );
-
-  if (!availableAction) {
-    return {
-      error: `Invalid action: "${actionName}" is not a valid action.`,
-    };
-  }
-  const parsedArgs: Record<string, number | string> = {};
-
-  if (argsArray.length !== availableAction.args.length) {
-    return {
-      error: `Invalid number of arguments: Expected ${availableAction.args.length} for action "${actionName}", but got ${argsArray.length}.`,
-    };
-  }
-
-  for (let i = 0; i < argsArray.length; i++) {
-    const arg = argsArray[i];
-    const expectedArg = availableAction.args[i];
-
-    parsedArgs[expectedArg.name] = arg;
-
-    // TODO: type-parsing is currently disabled because all our args are strings
-    // if (expectedArg.type === 'number') {
-    //   const numberValue = Number(arg);
-
-    //   if (isNaN(numberValue)) {
-    //     return {
-    //       error: `Invalid argument type: Expected a number for argument "${expectedArg.name}", but got "${arg}".`,
-    //     };
-    //   }
-
-    //   parsedArgs[expectedArg.name] = numberValue;
-    // } else if (expectedArg.type === 'string') {
-    //   parsedArgs[expectedArg.name] = arg;
-    // } else {
-    //   return {
-    //     // @ts-expect-error this is here to make sure we don't forget to update this code if we add a new arg type
-    //     error: `Invalid argument type: Unknown type "${expectedArg.type}" for argument "${expectedArg.name}".`,
-    //   };
-    // }
-  }
-
-  const parsedAction = {
-    name: availableAction.name,
-    args: parsedArgs,
-  } as ActionPayload;
-
-  return {
-    thought,
-    action: actionString,
-    parsedAction,
-  };
 }

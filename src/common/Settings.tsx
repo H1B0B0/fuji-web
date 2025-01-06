@@ -19,6 +19,11 @@ import {
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbLink,
+  NumberInput,
+  NumberInputField,
+  NumberInputStepper,
+  NumberIncrementStepper,
+  NumberDecrementStepper,
 } from "@chakra-ui/react";
 import { ArrowBackIcon, EditIcon, ChevronRightIcon } from "@chakra-ui/icons";
 import { useAppState } from "../state/store";
@@ -47,6 +52,7 @@ const Settings = ({ setInSettingsView }: SettingsProps) => {
     anthropicKey: state.settings.anthropicKey,
     geminiKey: state.settings.geminiKey,
     huggingFaceKey: state.settings.huggingFaceKey,
+    maxActions: state.currentTask.maxActions,
   }));
   const toast = useToast();
 
@@ -101,7 +107,7 @@ const Settings = ({ setInSettingsView }: SettingsProps) => {
   };
 
   return (
-    <>
+    <Box w="100%" minH="calc(100vh - 100px)">
       <HStack mb={4} alignItems="center">
         <IconButton
           variant="outline"
@@ -129,117 +135,150 @@ const Settings = ({ setInSettingsView }: SettingsProps) => {
           )}
         </Breadcrumb>
       </HStack>
-      {view === "knowledge" && <CustomKnowledgeBase />}
-      {view === "api" && (
-        <SetAPIKey
-          asInitializerView={false}
-          initialAnthropicKey={state.anthropicKey}
-          initialOpenAIKey={state.openAIKey}
-          initialGeminiKey={state.geminiKey}
-          initialHuggingFaceKey={state.huggingFaceKey}
-          onClose={backToSettings}
-        />
-      )}
-      {view === "settings" && (
-        <FormControl
-          as={VStack}
-          divider={<StackDivider borderColor="gray.200" />}
-          spacing={4}
-          align="stretch"
-        >
-          <Flex alignItems="center">
-            <Box>
-              <FormLabel mb="0">API Settings</FormLabel>
-              <FormHelperText>
-                The API key is stored locally on your device
-              </FormHelperText>
-            </Box>
-            <Spacer />
-            <Button onClick={() => setView("api")} rightIcon={<EditIcon />}>
-              Edit
-            </Button>
-          </Flex>
 
-          {debugMode && (
-            <Button
-              onClick={() => {
-                state.updateSettings({
-                  openAIKey: "",
-                  anthropicKey: "",
-                });
-              }}
-              colorScheme="red"
-            >
-              Clear API Keys
-            </Button>
-          )}
+      <Box w="100%" h="100%">
+        {view === "knowledge" && <CustomKnowledgeBase />}
+        {view === "api" && (
+          <SetAPIKey
+            asInitializerView={false}
+            initialAnthropicKey={state.anthropicKey}
+            initialOpenAIKey={state.openAIKey}
+            initialGeminiKey={state.geminiKey}
+            initialHuggingFaceKey={state.huggingFaceKey}
+            onClose={backToSettings}
+          />
+        )}
+        {view === "settings" && (
+          <FormControl
+            as={VStack}
+            divider={<StackDivider borderColor="gray.200" />}
+            spacing={4}
+            align="stretch"
+            w="100%"
+          >
+            <Flex alignItems="center">
+              <Box>
+                <FormLabel mb="0">API Settings</FormLabel>
+                <FormHelperText>
+                  The API key is stored locally on your device
+                </FormHelperText>
+              </Box>
+              <Spacer />
+              <Button onClick={() => setView("api")} rightIcon={<EditIcon />}>
+                Edit
+              </Button>
+            </Flex>
 
-          <Flex alignItems="center">
-            <FormLabel mb="0">Select Agent Mode</FormLabel>
-            <Spacer />
-            <Box w="50%">
-              <AgentModeDropdown />
-            </Box>
-          </Flex>
-          <Flex alignItems="center">
-            <FormLabel mb="0">Select Model</FormLabel>
-            <Spacer />
-            <Box w="50%">
-              <ModelDropdown />
-            </Box>
-          </Flex>
-
-          {!isValidModelSettings(
-            state.selectedModel,
-            state.agentMode,
-            state.openAIKey,
-            state.anthropicKey,
-            state.geminiKey,
-            state.huggingFaceKey,
-          ) ? (
-            <Alert status="error">
-              <AlertIcon />
-              <AlertDescription>
-                The current model settings are not valid. <br />
-                Please verify your API keys, and note that some models are not
-                compatible with certain agent modes.
-              </AlertDescription>
-            </Alert>
-          ) : null}
-
-          <Flex alignItems="center">
-            <FormLabel mb="0">Turn On Voice Mode</FormLabel>
-            <Spacer />
-            <Switch
-              id="voiceModeSwitch"
-              isChecked={state.voiceMode}
-              onChange={(e) => {
-                const isEnabled = e.target.checked;
-                if (isEnabled && !state.openAIKey) {
-                  toast({
-                    title: "Error",
-                    description: "Voice Mode requires an OpenAI API key.",
-                    status: "error",
-                    duration: 5000,
-                    isClosable: true,
+            {debugMode && (
+              <Button
+                onClick={() => {
+                  state.updateSettings({
+                    openAIKey: "",
+                    anthropicKey: "",
                   });
-                  return;
-                }
-                handleVoiceMode(isEnabled);
-                state.updateSettings({ voiceMode: isEnabled });
-              }}
-            />
-          </Flex>
-          <Flex alignItems="center">
-            <FormLabel mb="0">Custom Instructions</FormLabel>
-            <Spacer />
-            <Button rightIcon={<EditIcon />} onClick={openCKB}>
-              Edit
-            </Button>
-          </Flex>
-        </FormControl>
-      )}
-    </>
+                }}
+                colorScheme="red"
+              >
+                Clear API Keys
+              </Button>
+            )}
+
+            <Flex alignItems="center">
+              <FormLabel mb="0">Select Agent Mode</FormLabel>
+              <Spacer />
+              <Box w="50%">
+                <AgentModeDropdown />
+              </Box>
+            </Flex>
+            <Flex alignItems="center">
+              <FormLabel mb="0">Select Model</FormLabel>
+              <Spacer />
+              <Box w="50%">
+                <ModelDropdown />
+              </Box>
+            </Flex>
+
+            {!isValidModelSettings(
+              state.selectedModel,
+              state.agentMode,
+              state.openAIKey,
+              state.anthropicKey,
+              state.geminiKey,
+              state.huggingFaceKey,
+            ) ? (
+              <Alert status="error">
+                <AlertIcon />
+                <AlertDescription>
+                  The current model settings are not valid. <br />
+                  Please verify your API keys, and note that some models are not
+                  compatible with certain agent modes.
+                </AlertDescription>
+              </Alert>
+            ) : null}
+
+            <Flex alignItems="center">
+              <Box>
+                <FormLabel mb="0">Maximum Actions</FormLabel>
+                <FormHelperText>
+                  Limit the number of actions the AI can perform per task
+                </FormHelperText>
+              </Box>
+              <Spacer />
+              <Box width="120px">
+                <NumberInput
+                  min={1}
+                  max={100}
+                  value={state.maxActions}
+                  onChange={(valueString) => {
+                    const value = parseInt(valueString);
+                    if (!isNaN(value)) {
+                      state.updateSettings({ maxActions: value });
+                    }
+                  }}
+                >
+                  <NumberInputField />
+                  <NumberInputStepper>
+                    <NumberIncrementStepper />
+                    <NumberDecrementStepper />
+                  </NumberInputStepper>
+                </NumberInput>
+              </Box>
+            </Flex>
+
+            <Flex alignItems="center">
+              <FormLabel mb="0">Turn On Voice Mode</FormLabel>
+              <Spacer />
+              <Switch
+                id="voiceModeSwitch"
+                isChecked={Boolean(state.voiceMode)}
+                onChange={(e) => {
+                  const isEnabled = e.target.checked;
+                  if (isEnabled && !state.openAIKey) {
+                    toast({
+                      title: "Error",
+                      description: "Voice Mode requires an OpenAI API key.",
+                      status: "error",
+                      duration: 5000,
+                      isClosable: true,
+                    });
+                    return;
+                  }
+                  handleVoiceMode(isEnabled);
+                  state.updateSettings({ voiceMode: isEnabled });
+                }}
+              />
+            </Flex>
+            <Flex alignItems="center">
+              <FormLabel mb="0">Custom Instructions</FormLabel>
+              <Spacer />
+              <Button rightIcon={<EditIcon />} onClick={openCKB}>
+                Edit
+              </Button>
+            </Flex>
+          </FormControl>
+        )}
+      </Box>
+    </Box>
   );
 };
 

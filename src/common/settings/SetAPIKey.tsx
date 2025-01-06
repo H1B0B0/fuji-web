@@ -80,8 +80,8 @@ const SetAPIKey = ({
   return (
     <VStack spacing={4}>
       <Text fontSize="sm">
-        You'll need an OpenAI, Anthropic, or Google API key to run Fuji, or you
-        can continue with local models only.
+        You'll need an OpenAI, Anthropic, or Google API key to run Better-Fuji
+        🌋, or you can continue with local models only.
       </Text>
       <Box position="relative" py="2" w="full">
         <Divider />

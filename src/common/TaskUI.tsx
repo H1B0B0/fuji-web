@@ -1,172 +1,279 @@
-import React, { useCallback } from "react";
 import {
-  Button,
   Box,
+  Button,
   HStack,
-  Spacer,
-  useToast,
-  Alert,
-  AlertIcon,
-  AlertDescription,
   Input,
+  IconButton,
+  Text,
+  VStack,
+  useToast,
+  Flex,
+  Avatar,
+  Card,
+  CardBody,
+  keyframes,
+  SlideFade,
+  useColorModeValue,
+  Container,
+  Textarea,
+  Tooltip,
 } from "@chakra-ui/react";
-import { debugMode } from "../constants";
+import { ArrowUpIcon, CloseIcon, SmallCloseIcon } from "@chakra-ui/icons";
+import { FaRobot } from "react-icons/fa";
 import { useAppState } from "../state/store";
-import RunTaskButton from "./RunTaskButton";
-import VoiceButton from "./VoiceButton";
-import TaskHistory from "./TaskHistory";
+import { useState, useRef, useEffect } from "react";
 import TaskStatus from "./TaskStatus";
-import RecommendedTasks from "./RecommendedTasks";
-import AutosizeTextarea from "./AutosizeTextarea";
+import { motion } from "framer-motion";
 
-const injectContentScript = async () => {
-  const [tab] = await chrome.tabs.query({ currentWindow: true, active: true });
-  if (!tab || !tab.id) {
-    return;
-  }
+// Animation pour les messages qui apparaissent
+const slideIn = keyframes`
+  from { transform: translateY(10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+`;
 
-  await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
-    files: ["src/pages/contentInjected/index.js"],
-    world: "MAIN",
-  });
+// Composant animé pour les messages
+const MessageContainer = motion(Box);
+
+const formatConversationTitle = (prompt: string): string => {
+  // Extract core content by removing system prefixes and timestamps
+  const cleanTitle = prompt
+    .replace(/^The user requests the following task:\s*/i, "")
+    .replace(/Current time:.*$/i, "")
+    .replace(/fais moi des recherches? sur/i, "")
+    .replace(
+      /et écris moi le résultat de tes recherches sur un nouveau google docs/i,
+      "",
+    )
+    .replace(/recherche/i, "")
+    .replace(/^\s+|\s+$/g, "") // Trim whitespace
+    .split("\n")[0]; // Take first line only
+
+  // Capitalize first letter
+  return cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1);
 };
 
-function ActionExecutor() {
-  const state = useAppState((state) => ({
-    attachDebugger: state.currentTask.actions.attachDebugger,
-    detachDegugger: state.currentTask.actions.detachDebugger,
-    performActionString: state.currentTask.actions.performActionString,
-    prepareLabels: state.currentTask.actions.prepareLabels,
-    showImagePrompt: state.currentTask.actions.showImagePrompt,
-  }));
-  return (
-    <Box mt={4}>
-      <HStack
-        columnGap="0.5rem"
-        rowGap="0.5rem"
-        fontSize="md"
-        borderTop="1px dashed gray"
-        py="3"
-        shouldWrapChildren
-        wrap="wrap"
-      >
-        <Button onClick={state.attachDebugger}>Attach</Button>
-        <Button onClick={state.prepareLabels}>Prepare</Button>
-        <Button onClick={state.showImagePrompt}>Show Image</Button>
-        <Button
-          onClick={() => {
-            injectContentScript();
-          }}
-        >
-          Inject
-        </Button>
-      </HStack>
-    </Box>
-  );
-}
-
 const TaskUI = () => {
-  const state = useAppState((state) => ({
-    taskHistory: state.currentTask.history,
-    taskStatus: state.currentTask.status,
-    runTask: state.currentTask.actions.runTask,
-    instructions: state.ui.instructions,
-    setInstructions: state.ui.actions.setInstructions,
-    voiceMode: state.settings.voiceMode,
-    isListening: state.currentTask.isListening,
-    maxActions: state.currentTask.maxActions,
-    setMaxActions: state.currentTask.actions.setMaxActions,
-  }));
-  const taskInProgress = state.taskStatus === "running";
-
+  const [instructions, setInstructions] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
 
-  const toastError = useCallback(
-    (message: string) => {
+  const { history, status, runTask, interrupt } = useAppState((state) => ({
+    history: state.currentTask.history,
+    status: state.currentTask.status,
+    runTask: state.currentTask.actions.runTask,
+    interrupt: state.currentTask.actions.interrupt,
+  }));
+
+  const handleSubmit = () => {
+    if (!instructions.trim()) {
       toast({
         title: "Error",
-        description: message,
+        description: "Please enter instructions",
         status: "error",
-        duration: 5000,
-        isClosable: true,
+        duration: 3000,
       });
-    },
-    [toast],
-  );
-
-  const runTask = useCallback(() => {
-    state.instructions && state.runTask(toastError);
-  }, [state, toastError]);
-
-  const runTaskWithNewInstructions = (newInstructions: string = "") => {
-    if (!newInstructions) {
       return;
     }
-    state.setInstructions(newInstructions);
-    state.runTask(toastError);
+
+    if (status === "running") {
+      interrupt();
+    } else {
+      runTask((error) =>
+        toast({
+          title: "Error",
+          description: error,
+          status: "error",
+          duration: 5000,
+        }),
+      );
+    }
   };
 
-  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && e.shiftKey) {
+  useEffect(() => {
+    // Scroll to bottom when new messages arrive
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop =
+        chatContainerRef.current.scrollHeight;
+    }
+  }, [history]);
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      runTask();
+      handleSubmit();
     }
   };
 
-  const handleMaxActionsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value.replace(/\D/g, ""); // Remove all non-digit characters
-    if (value === "" || !isNaN(parseInt(value, 10))) {
-      state.setMaxActions(parseInt(value, 10) || 0);
-    }
+  const handleResize = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const textarea = e.target;
+    textarea.style.height = "auto";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+    setInstructions(e.target.value);
   };
+
+  const bgColor = useColorModeValue("gray.50", "gray.700");
+  const cardBg = useColorModeValue("white", "gray.600");
+  const aiBg = useColorModeValue("blue.50", "blue.900");
+  const borderColor = useColorModeValue("gray.200", "gray.600");
 
   return (
-    <>
-      <AutosizeTextarea
-        // eslint-disable-next-line jsx-a11y/no-autofocus
-        autoFocus
-        placeholder="Try telling Fuji to do a task"
-        value={state.instructions || ""}
-        isDisabled={taskInProgress || state.isListening}
-        onChange={(e) => state.setInstructions(e.target.value)}
-        mb={2}
-        onKeyDown={onKeyDown}
-      />
-      <HStack mt={2} mb={2}>
-        <RunTaskButton runTask={runTask} disabled={state.maxActions === 0} />
-        {state.voiceMode && (
-          <VoiceButton
-            taskInProgress={taskInProgress}
-            onStopSpeaking={runTask}
-          />
+    <VStack h="calc(100vh - 200px)" spacing={4} w="100%">
+      {/* Chat Container */}
+      <Box
+        ref={chatContainerRef}
+        flex="1"
+        w="100%"
+        overflowY="auto"
+        borderRadius="xl"
+        bg={bgColor}
+        p={6}
+        mb={20}
+        sx={{
+          "&::-webkit-scrollbar": {
+            width: "4px",
+          },
+          "&::-webkit-scrollbar-track": {
+            bg: "transparent",
+          },
+          "&::-webkit-scrollbar-thumb": {
+            bg: useColorModeValue("gray.300", "gray.600"),
+            borderRadius: "full",
+          },
+        }}
+      >
+        {history.length === 0 ? (
+          <Flex
+            h="100%"
+            direction="column"
+            align="center"
+            justify="center"
+            color="gray.500"
+            gap={4}
+          >
+            <Box
+              p={6}
+              borderRadius="full"
+              bg={useColorModeValue("gray.100", "gray.700")}
+            >
+              <FaRobot size="48px" />
+            </Box>
+            <Text fontSize="lg" fontWeight="medium">
+              Start a conversation by entering your instructions below
+            </Text>
+          </Flex>
+        ) : (
+          <VStack spacing={6} align="stretch">
+            {/* Conversation Title */}
+            <Box mb={4} textAlign="center">
+              <Text
+                fontSize="xl"
+                fontWeight="bold"
+                color={useColorModeValue("gray.700", "gray.300")}
+                pb={2}
+              >
+                {formatConversationTitle(history[0].prompt)}
+              </Text>
+              <Box
+                borderBottom="2px"
+                borderColor={useColorModeValue("gray.200", "gray.600")}
+              />
+            </Box>
+
+            {history.map((entry, index) => (
+              <MessageContainer
+                key={index}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: index * 0.1 }}
+              >
+                <HStack align="start">
+                  <Avatar
+                    size="sm"
+                    icon={<FaRobot />}
+                    bg="purple.500"
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    transition={{ type: "spring", stiffness: 260, damping: 20 }}
+                  />
+                  <MessageContainer
+                    flex={1}
+                    bg={useColorModeValue("blue.50", "blue.900")}
+                    p={4}
+                    borderRadius="lg"
+                    borderWidth="1px"
+                    borderColor={useColorModeValue("blue.200", "blue.700")}
+                    initial={{ x: 20, opacity: 0 }}
+                    animate={{ x: 0, opacity: 1 }}
+                    transition={{ duration: 0.2, delay: 0.1 }}
+                    _hover={{ shadow: "md" }}
+                  >
+                    <VStack align="stretch" spacing={3}>
+                      <Box>
+                        <Text fontWeight="bold" mb={2}>
+                          Thought:
+                        </Text>
+                        <Text>{entry.action.thought}</Text>
+                      </Box>
+                    </VStack>
+                  </MessageContainer>
+                </HStack>
+              </MessageContainer>
+            ))}
+          </VStack>
         )}
-        <Spacer />
-        <Input
-          type="number"
-          value={state.maxActions}
-          onChange={handleMaxActionsChange}
-          placeholder="Max Actions"
-          width="100px"
-        />
-      </HStack>
-      {state.voiceMode && (
-        <Alert status="info" borderRadius="lg">
-          <AlertIcon />
-          <AlertDescription fontSize="sm" lineHeight="5">
-            In Voice Mode, you can press Space to start speaking and Space again
-            to stop. Fuji will run the task when you stop speaking. To turn off
-            Voice Mode, click the Setting icon in the top right corner.
-          </AlertDescription>
-        </Alert>
-      )}
-      {!state.voiceMode && !state.instructions && (
-        <RecommendedTasks runTask={runTaskWithNewInstructions} />
-      )}
-      {debugMode && <ActionExecutor />}
-      <TaskStatus />
-      <TaskHistory />
-    </>
+      </Box>
+
+      {/* Input Area - Fixed to bottom with full width */}
+      <Box position="fixed" bottom="80px" left={0} right={0} px={4} zIndex={1}>
+        <Box
+          maxW="container.xl"
+          mx="auto"
+          bg={useColorModeValue("white", "gray.800")}
+          borderRadius="xl"
+          boxShadow="lg"
+          p={4}
+        >
+          <HStack spacing={3}>
+            <Box flex={1} position="relative">
+              <Input
+                ref={inputRef}
+                placeholder="What would you like me to do?"
+                value={instructions}
+                onChange={(e) => setInstructions(e.target.value)}
+                onKeyPress={handleKeyPress}
+                size="lg"
+                fontSize="sm"
+                lineHeight="normal"
+                bg={useColorModeValue("gray.50", "gray.700")}
+                border="2px solid"
+                borderColor={useColorModeValue("gray.200", "gray.600")}
+                _focus={{
+                  borderColor: "blue.400",
+                  boxShadow: "0 0 0 1px var(--chakra-colors-blue-400)",
+                }}
+                pr={instructions ? "0.5rem" : "inherit"}
+              />
+            </Box>
+            <Button
+              colorScheme="blue"
+              size="lg"
+              px={8}
+              isDisabled={!instructions.trim()}
+              leftIcon={<ArrowUpIcon />}
+              onClick={handleSubmit}
+              _hover={{
+                transform: "translateY(-2px)",
+              }}
+              transition="all 0.2s"
+            >
+              {status === "running" ? "Stop" : "Send"}
+            </Button>
+          </HStack>
+          <TaskStatus />
+        </Box>
+      </Box>
+    </VStack>
   );
 };
 

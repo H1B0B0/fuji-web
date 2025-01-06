@@ -14,79 +14,78 @@ import { useAppState } from "../state/store";
 import SetAPIKey from "./settings/SetAPIKey";
 import TaskUI from "./TaskUI";
 import Settings from "./Settings";
+import { downloadedModelsCache } from "../helpers/aiSdkUtils";
 
 const App = () => {
-  const hasAPIKey = useAppState(
-    (state) =>
+  const { hasAPIKey, hasLocalModels } = useAppState((state) => ({
+    hasAPIKey: !!(
       state.settings.anthropicKey ||
       state.settings.openAIKey ||
       state.settings.huggingFaceKey ||
-      state.settings.geminiKey,
-  );
+      state.settings.geminiKey
+    ),
+    hasLocalModels:
+      state.settings.selectedModel && downloadedModelsCache.size > 0,
+  }));
+
   const [inSettingsView, setInSettingsView] = useState(false);
 
   return (
     <ChakraProvider>
-      <Box p="8" pb="24" fontSize="lg" w="full">
-        <HStack mb={4} alignItems="center">
-          <Heading as="h1" size="lg" flex={1}>
-            Fuji 🗻
-          </Heading>
-          {hasAPIKey && (
-            <IconButton
-              icon={<SettingsIcon />}
-              onClick={() => setInSettingsView(true)}
-              aria-label="open settings"
-            />
-          )}
-        </HStack>
-        {hasAPIKey ? (
-          inSettingsView ? (
-            <Settings setInSettingsView={setInSettingsView} />
-          ) : (
-            <TaskUI />
-          )
-        ) : (
-          <SetAPIKey asInitializerView />
-        )}
-      </Box>
-      <Box
-        px="8"
-        pos="fixed"
-        w="100%"
-        bottom={0}
-        zIndex={2}
-        as="footer"
-        backdropFilter="auto"
-        backdropBlur="6px"
-        backgroundColor="rgba(255, 255, 255, 0.6)"
-      >
-        <HStack
-          columnGap="1.5rem"
-          rowGap="0.5rem"
-          fontSize="md"
-          borderTop="1px dashed gray"
-          py="3"
-          justify="center"
-          shouldWrapChildren
-          wrap="wrap"
+      <Box display="flex" flexDirection="column" minH="100vh" w="100%">
+        <Box flex="1" px={4} pt={4} pb={16}>
+          <HStack mb={4} alignItems="center">
+            <Heading as="h1" size="lg" flex={1}>
+              Better-Fuji 🌋
+            </Heading>
+            {(hasAPIKey || hasLocalModels) && (
+              <IconButton
+                icon={<SettingsIcon />}
+                onClick={() => setInSettingsView(true)}
+                aria-label="open settings"
+              />
+            )}
+          </HStack>
+          <Box w="100%" h="100%">
+            {hasAPIKey || hasLocalModels ? (
+              inSettingsView ? (
+                <Settings setInSettingsView={setInSettingsView} />
+              ) : (
+                <TaskUI />
+              )
+            ) : (
+              <SetAPIKey asInitializerView />
+            )}
+          </Box>
+        </Box>
+        <Box
+          px="8"
+          pos="fixed"
+          w="100%"
+          bottom={0}
+          height="60px" // Fixed height for footer
+          zIndex={1}
+          as="footer"
+          backdropFilter="auto"
+          backdropBlur="6px"
+          backgroundColor="rgba(255, 255, 255, 0.8)"
+          borderTop="1px solid"
+          borderColor="gray.200"
         >
-          <Link
-            href="https://github.com/normal-computing/fuji-web#readme"
-            isExternal
+          <HStack
+            columnGap="1.5rem"
+            rowGap="0.5rem"
+            fontSize="md"
+            py="3"
+            justify="center"
+            shouldWrapChildren
+            wrap="wrap"
           >
-            About this project
-          </Link>
-          <Link href="https://forms.gle/isLeGyUvoKGiqT8W8" isExternal>
-            Leave Feedback
-          </Link>
-          <Link href="https://github.com/normal-computing/fuji-web" isExternal>
-            GitHub <Icon verticalAlign="text-bottom" as={FaGithub} />
-          </Link>
-          <Link href="https://discord.gg/yfMjZ8udb5" isExternal>
-            Join Our Discord <Icon verticalAlign="text-bottom" as={FaDiscord} />
-          </Link>
-        </HStack>
+            <Link href="https://github.com/H1B0B0/fuji-web" isExternal>
+              GitHub <Icon verticalAlign="text-bottom" as={FaGithub} />
+            </Link>
+          </HStack>
+        </Box>
       </Box>
     </ChakraProvider>
   );

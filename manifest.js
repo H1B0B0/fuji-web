@@ -6,7 +6,7 @@ import packageJson from "./package.json" with { type: "json" };
  */
 const manifest = {
   manifest_version: 3,
-  name: "Fuji",
+  name: "Better-Fuji",
   version: packageJson.version,
   description: packageJson.description,
   permissions: [

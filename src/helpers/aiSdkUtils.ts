@@ -4,7 +4,6 @@ import OpenAI from "openai";
 import { useAppState } from "../state/store";
 import { enumValues } from "./utils";
 import { HfInference } from "@huggingface/inference";
-import { Stream } from "stream";
 
 export enum AgentMode {
   // Vision = "vision",
@@ -26,12 +25,6 @@ export enum SupportedModels {
   Claude3Opus = "claude-3-opus-20240229",
   Claude35Sonnet = "claude-3.5-sonnet-20240620",
   Gemini15Pro = "gemini-1.5-pro",
-  OllamaCodeLlama = "codellama",
-  OllamaMistral = "mistral",
-  OllamaLlama32 = "llama3.2",
-  Ollamaqwq = "qwq",
-  OllamahfMinistral = "hf.co/bartowski/Ministral-8B-Instruct-2410-GGUF",
-  Ollamagemma2 = "gemma2",
   HuggingFaceLlama32 = "Qwen/Qwen2-VL-2B-Instruct",
 }
 
@@ -55,13 +48,6 @@ export const DisplayName = {
   [SupportedModels.Claude3Opus]: "Claude 3 Opus",
   [SupportedModels.Claude35Sonnet]: "Claude 3.5 Sonnet",
   [SupportedModels.Gemini15Pro]: "Gemini 1.5 Pro",
-  [SupportedModels.OllamaCodeLlama]: "CodeLlama (Local)",
-  [SupportedModels.OllamaMistral]: "Mistral 7b (Local)",
-  [SupportedModels.OllamaLlama32]: "Llama 3.2 3b (Local)",
-  [SupportedModels.Ollamaqwq]: "qwq 32b (Local)",
-  [SupportedModels.OllamahfMinistral]:
-    "Hugging Face Ministral 8B Instruct 2410 GGUF (Local)",
-  [SupportedModels.Ollamagemma2]: "Gemma 2 (Local)",
   [SupportedModels.HuggingFaceLlama32]:
     "Qwen/Qwen2-VL-2B-Instruct (Hugging Face)",
 };
@@ -76,7 +62,8 @@ export function hasVisionSupport(model: SupportedModels) {
     model === SupportedModels.Claude3Opus ||
     model === SupportedModels.Claude35Sonnet ||
     model === SupportedModels.Gemini15Pro ||
-    model === SupportedModels.HuggingFaceLlama32
+    model === SupportedModels.HuggingFaceLlama32 ||
+    downloadedModelsCache.has(model as string)
   );
 }
 
@@ -88,14 +75,7 @@ export type SDKChoice =
   | "HuggingFace";
 
 function chooseSDK(model: SupportedModels): SDKChoice {
-  if (
-    model === SupportedModels.OllamaCodeLlama ||
-    model === SupportedModels.OllamaMistral ||
-    model === SupportedModels.OllamaLlama32 ||
-    model === SupportedModels.Ollamaqwq ||
-    model === SupportedModels.OllamahfMinistral ||
-    model === SupportedModels.Ollamagemma2
-  ) {
+  if (downloadedModelsCache.has(model as string)) {
     return "Ollama";
   }
   if (
@@ -124,14 +104,10 @@ export function isGoogleModel(model: SupportedModels) {
 }
 
 export const isLocalModel = (model: string): boolean => {
-  return (
-    model === SupportedModels.OllamaCodeLlama ||
-    model === SupportedModels.OllamaMistral ||
-    model === SupportedModels.OllamaLlama32 ||
-    model === SupportedModels.Ollamaqwq ||
-    model === SupportedModels.OllamahfMinistral ||
-    model === SupportedModels.Ollamagemma2
-  );
+  if (downloadedModelsCache.has(model)) {
+    return true;
+  }
+  return false;
 };
 
 export function isHuggingFaceModel(model: SupportedModels): boolean {
@@ -146,43 +122,29 @@ export function isValidModelSettings(
   geminiKey?: string,
   huggingFaceKey?: string,
 ): boolean {
-  if (!isSupportedModel(selectedModel)) {
+  // Vérifier d'abord si c'est un modèle local
+  if (downloadedModelsCache.has(selectedModel)) {
+    return true;
+  }
+
+  // Ensuite vérifier si c'est un modèle supporté
+  if (!enumValues(SupportedModels).includes(selectedModel as SupportedModels)) {
     return false;
   }
 
-  // Allow local models without API check
-  if (isLocalModel(selectedModel)) {
-    return true;
-  }
-  // Allow local models without API keys
-  if (
-    selectedModel === SupportedModels.OllamaCodeLlama ||
-    selectedModel === SupportedModels.OllamaMistral ||
-    selectedModel === SupportedModels.OllamaLlama32 ||
-    selectedModel === SupportedModels.Ollamaqwq ||
-    selectedModel === SupportedModels.OllamahfMinistral ||
-    selectedModel === SupportedModels.Ollamagemma2
-  ) {
-    return true;
-  }
+  // Vérification du mode vision
   if (
     agentMode === AgentMode.VisionEnhanced &&
     !hasVisionSupport(selectedModel)
   ) {
     return false;
   }
-  if (isOpenAIModel(selectedModel) && !openAIKey) {
-    return false;
-  }
-  if (isAnthropicModel(selectedModel) && !anthropicKey) {
-    return false;
-  }
-  if (isGoogleModel(selectedModel) && !geminiKey) {
-    return false;
-  }
-  if (isHuggingFaceModel(selectedModel) && !huggingFaceKey) {
-    return false;
-  }
+
+  // Vérification des clés API
+  if (isOpenAIModel(selectedModel) && !openAIKey) return false;
+  if (isAnthropicModel(selectedModel) && !anthropicKey) return false;
+  if (isGoogleModel(selectedModel) && !geminiKey) return false;
+  if (isHuggingFaceModel(selectedModel) && !huggingFaceKey) return false;
 
   return true;
 }
@@ -195,6 +157,12 @@ export function findBestMatchingModel(
   geminiKey: string | undefined,
   huggingFaceKey: string | undefined,
 ): SupportedModels {
+  // Vérifier d'abord les modèles locaux
+  if (downloadedModelsCache.has(selectedModel)) {
+    return selectedModel as SupportedModels;
+  }
+
+  // Si le modèle actuel est valide, le conserver
   if (
     isValidModelSettings(
       selectedModel,
@@ -207,22 +175,19 @@ export function findBestMatchingModel(
   ) {
     return selectedModel as SupportedModels;
   }
-  // If no API keys are present, default to local model
-  if (!openAIKey && !anthropicKey && !geminiKey) {
-    return SupportedModels.OllamaMistral;
+
+  // Sélectionner le premier modèle local disponible
+  const localModels = Array.from(downloadedModelsCache);
+  if (localModels.length > 0) {
+    return localModels[0] as SupportedModels;
   }
-  if (openAIKey) {
-    return SupportedModels.Gpt4Turbo;
-  }
-  if (anthropicKey) {
-    return SupportedModels.Claude35Sonnet;
-  }
-  if (geminiKey) {
-    return SupportedModels.Gemini15Pro;
-  }
-  if (huggingFaceKey) {
-    return SupportedModels.HuggingFaceLlama32;
-  }
+
+  // Sinon, sélectionner un modèle basé sur les clés API disponibles
+  if (openAIKey) return SupportedModels.Gpt4Turbo;
+  if (anthropicKey) return SupportedModels.Claude35Sonnet;
+  if (geminiKey) return SupportedModels.Gemini15Pro;
+  if (huggingFaceKey) return SupportedModels.HuggingFaceLlama32;
+
   return DEFAULT_MODEL;
 }
 
@@ -253,55 +218,120 @@ export async function listOllamaModels(): Promise<OllamaModelInfo[]> {
       throw new Error("Failed to fetch Ollama models");
     }
     const data = await response.json();
-    return data.models || [];
+    // S'assurer que les modèles sont correctement formatés
+    return (data.models || []).map((model: any) => ({
+      ...model,
+      name: model.name || model.model, // Certains modèles utilisent 'model' au lieu de 'name'
+      status: "downloaded" // Si le modèle est listé, il est considéré comme téléchargé
+    }));
   } catch (error) {
     console.error("Error listing Ollama models:", error);
     return [];
   }
 }
 
+// Fonction utilitaire pour normaliser les noms de modèles
+function normalizeModelName(modelName: string): string {
+  if (!modelName) return "";
+  // Enlever le :latest et tout ce qui suit
+  return modelName.split(":")[0];
+}
+
 export const addNewOllamaModel = (modelName: string) => {
-  // Vérifier si le modèle n'existe pas déjà
-  if (!(modelName in SupportedModels)) {
-    // Ajouter dynamiquement le nouveau modèle à l'enum et au DisplayName
-    (SupportedModels as any)[modelName] = modelName;
-    (DisplayName as any)[modelName] = `${modelName} (Local)`;
+  const cleanModelName = normalizeModelName(modelName).replace(
+    /[^a-zA-Z0-9-._:]/g,
+    "",
+  );
+
+  // Vérifier si le modèle existe déjà
+  if (downloadedModelsCache.has(cleanModelName)) {
+    return; // Ne pas ajouter de doublon
   }
+
+  downloadedModelsCache.add(cleanModelName);
+  saveDownloadedModels();
+  console.log(`Added model ${cleanModelName} to cache`);
 };
 
 // Ajouter un cache pour les modèles téléchargés
-const downloadedModelsCache = new Set<string>();
+export const downloadedModelsCache = new Set<string>();
 
-export async function downloadOllamaModel(modelName: string): Promise<boolean> {
+// 1. Ajouter la persistance des modèles
+const STORAGE_KEY = "ollama-downloaded-models";
+
+// Charger les modèles depuis le storage au démarrage
+const loadDownloadedModels = () => {
+  const stored = localStorage.getItem(STORAGE_KEY);
+  if (stored) {
+    const models = JSON.parse(stored);
+    models.forEach((model: string) => {
+      downloadedModelsCache.add(model);
+      addNewOllamaModel(model);
+    });
+  }
+};
+
+// Sauvegarder les modèles dans le storage
+const saveDownloadedModels = () => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify([...downloadedModelsCache]));
+};
+
+// 2. Modifier downloadOllamaModel pour persister
+export async function downloadOllamaModel(
+  modelName: string,
+  onProgress?: (progress: number) => void,
+): Promise<boolean> {
   try {
     const response = await fetch("http://localhost:11434/api/pull", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ name: modelName }),
+      body: JSON.stringify({
+        // NOTE the parameter name should match Ollama’s API spec:
+        model: modelName,
+        stream: true,
+      }),
     });
 
     if (!response.ok) {
       throw new Error(`Failed to download model ${modelName}`);
     }
 
-    // La réponse est un stream d'événements
     const reader = response.body?.getReader();
     if (!reader) return false;
+
+    const decoder = new TextDecoder();
+    let buffer = "";
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-
-      // Vous pouvez traiter les événements de progression ici
-      console.log("Download progress:", new TextDecoder().decode(value));
+      if (value) {
+        buffer += decoder.decode(value, { stream: true });
+        let newlineIndex;
+        // Parse line by line
+        while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
+          const line = buffer.slice(0, newlineIndex).trim();
+          buffer = buffer.slice(newlineIndex + 1);
+          if (!line) continue;
+          try {
+            const statusObj = JSON.parse(line);
+            // If the API returns total & completed, update progress
+            if (statusObj.total && statusObj.completed && onProgress) {
+              onProgress((statusObj.completed / statusObj.total) * 100);
+            }
+          } catch (e) {
+            console.error("JSON parse error:", e);
+          }
+        }
+      }
     }
 
-    // Ajouter le nouveau modèle à la liste des modèles supportés
     addNewOllamaModel(modelName);
-    // Ajouter au cache si le téléchargement réussit
     downloadedModelsCache.add(modelName);
+    saveDownloadedModels();
+    await refreshOllamaModelsCache();
     return true;
   } catch (error) {
     console.error(`Error downloading Ollama model ${modelName}:`, error);
@@ -339,18 +369,84 @@ export async function createCustomOllamaModel(
 export const refreshOllamaModelsCache = async (): Promise<void> => {
   try {
     const models = await listOllamaModels();
-    // Vider le cache
+    
     downloadedModelsCache.clear();
-    // Ajouter tous les modèles téléchargés au cache
+    
+    // Filtrer et traiter les modèles
     models.forEach((model) => {
-      if (model.status === "downloaded") {
-        downloadedModelsCache.add(model.name);
+      // Vérifier si le modèle est un modèle valide
+      if (model.name) {
+        const normalizedName = normalizeModelName(model.name);
+        console.log(`Processing model: ${normalizedName}, status: ${model.status}`);
+        if (normalizedName) {
+          downloadedModelsCache.add(normalizedName);
+          console.log(`Added model to cache: ${normalizedName}`);
+        }
       }
     });
+
+    saveDownloadedModels();
+    console.log("Final cache contents:", Array.from(downloadedModelsCache));
   } catch (error) {
     console.error("Error refreshing Ollama models cache:", error);
   }
 };
+
+// 4. Initialiser au démarrage
+loadDownloadedModels();
+refreshOllamaModelsCache();
+
+async function validateAndResizeImage(
+  base64Data: string,
+  format: string,
+): Promise<string> {
+  const MAX_SIZE = 1120;
+
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      // Check if resize needed
+      if (img.width <= MAX_SIZE && img.height <= MAX_SIZE) {
+        // Always convert to PNG format
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Failed to get canvas context"));
+          return;
+        }
+        canvas.width = img.width;
+        canvas.height = img.height;
+        ctx.drawImage(img, 0, 0);
+        // Convert to PNG without specifying format
+        resolve(canvas.toDataURL().split(",")[1]);
+        return;
+      }
+
+      // Resize image
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("Failed to get canvas context"));
+        return;
+      }
+
+      // Calculate new dimensions
+      const ratio = Math.min(MAX_SIZE / img.width, MAX_SIZE / img.height);
+      canvas.width = img.width * ratio;
+      canvas.height = img.height * ratio;
+
+      // Draw resized image
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      // Convert to PNG without specifying format
+      resolve(canvas.toDataURL().split(",")[1]);
+    };
+
+    img.onerror = () => reject(new Error("Failed to load image"));
+    // Load original format but will convert to PNG
+    img.src = `data:image/${format};base64,${base64Data}`;
+  });
+}
 
 export async function fetchResponseFromModelOllama(
   model: SupportedModels,
@@ -358,9 +454,8 @@ export async function fetchResponseFromModelOllama(
 ): Promise<Response> {
   console.log("fetchResponseFromModelOllama with params:", params);
 
-  // Vérifier d'abord le cache
+  // Verify cache and download if needed
   if (!downloadedModelsCache.has(model)) {
-    // Vérifier le statut du modèle seulement si pas dans le cache
     const models = await listOllamaModels();
     const modelInfo = models.find((m) => m.name === model);
 
@@ -371,27 +466,97 @@ export async function fetchResponseFromModelOllama(
         throw new Error(`Failed to download model ${model}`);
       }
     }
-    // Ajouter au cache une fois téléchargé
     downloadedModelsCache.add(model);
   }
 
   const url = "http://localhost:11434/api/chat";
+
+  // Handle image data
+  let imageContent = null;
+  if (params.imageData) {
+    try {
+      const matches = params.imageData.match(
+        /^data:image\/(gif|jpe?g|png|webp);base64,(.+)$/,
+      );
+      if (!matches) {
+        throw new Error(
+          "Format d'image invalide - Doit être GIF, JPEG, PNG ou WebP",
+        );
+      }
+
+      const [_, format, base64Data] = matches;
+      console.log(`Processing ${format} image...`);
+
+      if (!base64Data?.trim()) {
+        throw new Error("Données image vides");
+      }
+
+      // Validate size and resize if needed
+      imageContent = await validateAndResizeImage(base64Data, format);
+      console.log("Image processed successfully");
+    } catch (error) {
+      console.error("Erreur de traitement image:", error);
+      throw error;
+    }
+  }
+
+  const systemPrompt = `${params.systemMessage || ""}
+  IMPORTANT: You must respond in the following JSON format with one of these specific actions:
+  {
+    "thought": "your reasoning here",
+    "action": {
+      "name": "click" | "setValue" | "setValueAndEnter" | "navigate" | "scroll" | "wait" | "finish" | "fail",
+      "args": {
+        "key": "value"
+      }
+    }
+  }`;
+
+  console.log("Debug Image Content:", imageContent);
+
   const payload = {
     model: model,
     messages: [
       {
         role: "system",
-        content: params.systemMessage,
+        content: systemPrompt,
       },
       {
         role: "user",
         content: params.prompt,
+        ...(imageContent ? { images: [imageContent] } : {}),
       },
     ],
     stream: false,
+    format: {
+      type: "object",
+      properties: {
+        thought: {
+          type: "string",
+        },
+        action: {
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+            },
+            args: {
+              type: "object",
+            },
+          },
+          required: ["name", "args"],
+        },
+      },
+      required: ["thought", "action"],
+    },
+    options: {
+      temperature: 0,
+    },
   };
 
   try {
+    console.log("Sending payload to Ollama:", JSON.stringify(payload, null, 2));
+
     const response = await fetch(url, {
       method: "POST",
       headers: {
@@ -410,21 +575,61 @@ export async function fetchResponseFromModelOllama(
     const data = await response.json();
     console.log("Ollama response:", data);
 
+    let formattedResponse = data.message?.content || "";
+
+    // Ensure the response is valid JSON and has correct action
+    try {
+      const parsed = JSON.parse(formattedResponse);
+      const validActions = [
+        "click",
+        "setValue",
+        "setValueAndEnter",
+        "navigate",
+        "scroll",
+        "wait",
+        "finish",
+        "fail",
+      ];
+
+      if (
+        !parsed.thought ||
+        !parsed.action ||
+        !parsed.action.name ||
+        !validActions.includes(parsed.action.name)
+      ) {
+        formattedResponse = JSON.stringify({
+          thought: "Error: Invalid response format",
+          action: {
+            name: "fail",
+            args: {
+              reason: "Model response did not include valid action",
+            },
+          },
+        });
+      }
+    } catch (e) {
+      formattedResponse = JSON.stringify({
+        thought: "Error: Invalid JSON response",
+        action: {
+          name: "fail",
+          args: {
+            reason: "Model response was not valid JSON",
+          },
+        },
+      });
+    }
+
     return {
       usage: {
         total_tokens: data.eval_count || 0,
         prompt_tokens: data.prompt_eval_count || 0,
         completion_tokens: 0,
       },
-      rawResponse: data.message?.content || "",
+      rawResponse: formattedResponse,
     };
   } catch (error) {
     console.error("Ollama fetch error:", error);
-    if (error instanceof Error) {
-      throw new Error(`Failed to fetch from Ollama: ${error.message}`);
-    } else {
-      throw new Error("Failed to fetch from Ollama: Unknown error");
-    }
+    throw error;
   }
 }
 
@@ -743,3 +948,43 @@ export async function fetchResponseFromModel(
     throw new Error("Unsupported model");
   }
 }
+
+export async function deleteOllamaModel(modelName: string): Promise<boolean> {
+  try {
+    const response = await fetch("http://localhost:11434/api/delete", {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: modelName,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to delete model ${modelName}`);
+    }
+
+    // Retirer le modèle du cache
+    downloadedModelsCache.delete(modelName);
+    saveDownloadedModels();
+
+    return true;
+  } catch (error) {
+    console.error(`Error deleting Ollama model ${modelName}:`, error);
+    return false;
+  }
+}
+// ... add this new function ...
+
+export async function checkOllamaServer(): Promise<boolean> {
+  try {
+    const response = await fetch("http://localhost:11434/api/version");
+    return response.ok;
+  } catch (error) {
+    console.error("Ollama server check failed:", error);
+    return false;
+  }
+}
+
+// ... existing code ...

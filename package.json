@@ -1,10 +1,10 @@
 {
-  "name": "fuji-web",
+  "name": "better-fuji-web",
   "version": "2.2.0",
   "description": "A tool that redefines web interaction, making complex online tasks as simple as uttering a single command.",
   "repository": {
     "type": "git",
-    "url": "https://github.com/normal-computing/fuji-web"
+    "url": "https://github.com/H1B0B0/fuji-web"
   },
   "scripts": {
     "build": "tsc --noEmit && vite build",
@@ -35,6 +35,7 @@
     "accname": "^1.1.0",
     "construct-style-sheets-polyfill": "3.1.0",
     "formik": "^2.4.5",
+    "framer-motion": "^11.15.0",
     "immer": "^10.0.3",
     "lodash": "^4.17.21",
     "openai": "^4.60.0",

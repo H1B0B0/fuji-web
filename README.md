@@ -5,7 +5,7 @@
 Fuji-Web is an intelligent AI partner that understands the user’s intent, navigates websites autonomously, and executes tasks on the user’s behalf while explaining each action step.
 
 ### Demo
-https://github.com/normal-computing/fuji-web/assets/1001890/88a2fa12-31d9-4856-be67-27dcf9f1e634
+https://github.com/H1B0B0/fuji-webfuji-web/assets/1001890/88a2fa12-31d9-4856-be67-27dcf9f1e634
 
 ## How does it work?
 
@@ -15,7 +15,7 @@ https://github.com/normal-computing/fuji-web/assets/1001890/88a2fa12-31d9-4856-b
 
 ### Download and Install the extension in your browser
 
-1. Go to the [releases page](https://github.com/normal-computing/fuji-web/releases), find the latest version of the extension and download "fuji-extension.zip".
+1. Go to the [releases page](https://github.com/H1B0B0/fuji-webfuji-web/releases), find the latest version of the extension and download "fuji-extension.zip".
 2. Unzip the file.
 3. Load your extension on Chrome by doing the following:
    1. Navigate to `chrome://extensions/`
