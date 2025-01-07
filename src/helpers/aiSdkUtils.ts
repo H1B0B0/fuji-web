@@ -248,8 +248,16 @@ export async function listOllamaModels(): Promise<OllamaModelInfo[]> {
 // Fonction utilitaire pour normaliser les noms de modèles
 function normalizeModelName(modelName: string): string {
   if (!modelName) return "";
-  // Enlever le :latest et tout ce qui suit
-  return modelName.split(":")[0];
+
+  // Remove only version tags like :latest but keep model variants like :20b
+  const parts = modelName.split(":");
+  if (parts.length <= 1) return modelName;
+
+  // Keep the first part and any part that contains numbers (model variants)
+  const modelBase = parts[0];
+  const variant = parts.slice(1).find((part) => /\d/.test(part));
+
+  return variant ? `${modelBase}:${variant}` : modelBase;
 }
 
 export const addNewOllamaModel = (modelName: string) => {
