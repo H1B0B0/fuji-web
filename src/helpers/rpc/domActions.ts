@@ -22,6 +22,18 @@ export class DomActions {
     return chrome.debugger.sendCommand({ tabId: this.tabId }, method, params);
   }
 
+  public async setValueAndEnter(payload: {
+    elementId: number;
+    value: string;
+  }): Promise<boolean> {
+    const success = await this.setValueWithElementId({
+      elementId: payload.elementId,
+      value: payload.value,
+      shiftEnter: true,
+    });
+    return success;
+  }
+
   private async getObjectIdBySelector(
     selector: string,
   ): Promise<string | undefined> {
@@ -258,12 +270,79 @@ export class DomActions {
     value: string;
     shiftEnter?: boolean;
   }): Promise<boolean> {
-    const selector = await this.getTaxySelector(payload.elementId);
-    return this.setValueWithSelector({
-      selector,
-      value: payload.value,
-      shiftEnter: payload.shiftEnter,
-    });
+    // Tableau des stratégies de sélection à essayer
+    console.log("setValueWithElementId", payload);
+    const selectorStrategies = [
+      // 1. Stratégie Taxy
+      async () => {
+        try {
+          const selector = await this.getTaxySelector(payload.elementId);
+          return { selector, success: true };
+        } catch (e) {
+          console.log("Taxy selector strategy failed:", e);
+          return { success: false };
+        }
+      },
+      // 2. Stratégie data-pe-idx
+      async () => ({
+        selector: `[data-pe-idx="${payload.elementId}"]`,
+        success: true,
+      }),
+      // 3. Stratégie ID direct
+      async () => ({
+        selector: `[id="${payload.elementId}"]`,
+        success: true,
+      }),
+      // 4. Stratégie input avec name/id
+      async () => ({
+        selector: `input[name="${payload.elementId}"], input[id="${payload.elementId}"]`,
+        success: true,
+      }),
+    ];
+
+    // Essayer chaque stratégie jusqu'à ce qu'une réussisse
+    for (const strategy of selectorStrategies) {
+      try {
+        const result = await strategy();
+        if (result.success && result.selector) {
+          const setValueResult = await this.setValueWithSelector({
+            selector: result.selector,
+            value: payload.value,
+            shiftEnter: payload.shiftEnter,
+          });
+          if (setValueResult) {
+            return true;
+          }
+        }
+      } catch (error) {
+        console.log("Strategy failed:", error);
+        continue;
+      }
+    }
+
+    // Si aucune stratégie n'a fonctionné, essayer une dernière approche avec querySelector
+    try {
+      await this.sendCommand("Runtime.evaluate", {
+        expression: `
+          (function() {
+            const elements = document.querySelectorAll('input, textarea');
+            for (const el of elements) {
+              if (el.id === "${payload.elementId}" || el.name === "${payload.elementId}") {
+                el.value = ${JSON.stringify(payload.value)};
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.focus();
+                return true;
+              }
+            }
+            return false;
+          })()
+        `,
+      });
+      return true;
+    } catch (error) {
+      console.error("All setValue strategies failed:", error);
+      return false;
+    }
   }
 
   public async setValueWithSelector(payload: {

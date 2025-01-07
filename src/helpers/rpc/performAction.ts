@@ -14,6 +14,18 @@ function getFallbackSelector(selectorName: string): string {
   return `[${VISIBLE_TEXT_ATTRIBUTE_NAME}="${selectorName}"]`;
 }
 
+function extractNumericId(elementId: string): number {
+  // Try to extract numeric value if present in string
+  const numericMatches = elementId.match(/\d+/);
+
+  if (numericMatches) {
+    // Use first number found in string
+    return parseInt(numericMatches[0], 10);
+  }
+  // If no numbers found, try using string length as fallback
+  return elementId.length > 0 ? parseInt(elementId, 36) : 0;
+}
+
 export async function clickWithSelector(
   domActions: DomActions,
   selector: string,
@@ -28,9 +40,15 @@ export async function clickWithElementId(
   domActions: DomActions,
   elementId: string,
 ): Promise<boolean> {
-  console.log("clickWithElementId", elementId);
+  console.log("clickWithElementId input:", elementId);
+  const numericId = extractNumericId(elementId);
+  console.log("Converted elementId:", {
+    original: elementId,
+    converted: numericId,
+  });
+
   return await domActions.clickWithElementId({
-    elementId: parseInt(elementId),
+    elementId: numericId,
   });
 }
 
@@ -74,9 +92,15 @@ export async function setValueWithElementId(
   elementId: string,
   value: string,
 ): Promise<boolean> {
-  console.log("setValueWithElementId", elementId);
+  console.log("setValueWithElementId input:", { elementId, value });
+  const numericId = extractNumericId(elementId);
+  console.log("Converted elementId:", {
+    original: elementId,
+    converted: numericId,
+  });
+
   return await domActions.setValueWithElementId({
-    elementId: parseInt(elementId),
+    elementId: numericId,
     value,
   });
 }
@@ -151,10 +175,16 @@ function createOperateTool(
       case "fail":
         console.warn("Action failed.");
         break;
-      case "navigate":
-        console.log("Navigate to new page", action.args.url);
-        window.open(action.args.url, "_blank");
+      case "navigate": {
+        const url = action.args?.url;
+        if (!url) {
+          console.error("No URL provided for navigation", action);
+          return;
+        }
+        console.log("Navigate to new page:", url);
+        window.open(url, "_blank");
         break;
+      }
       case "click": {
         const success = await click(domActions, action.args.uid);
         if (!success) {
