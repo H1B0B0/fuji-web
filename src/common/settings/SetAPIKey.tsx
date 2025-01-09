@@ -13,7 +13,7 @@ import {
 } from "@chakra-ui/react";
 import React from "react";
 import { useAppState } from "../../state/store";
-import { SupportedModels } from "@root/src/helpers/aiSdkUtils";
+import { downloadedModelsCache } from "@root/src/helpers/aiSdkUtils";
 
 type SetAPIKeyProps = {
   asInitializerView?: boolean;
@@ -217,20 +217,27 @@ const SetAPIKey = ({
             !openAIKey && !anthropicKey && !geminiKey && !huggingFaceKey
           }
           colorScheme="blue"
+          fontSize="sm" // Réduire la taille de la police
         >
           Save API Keys
         </Button>
         <Button
           onClick={() => {
+            // Mise à jour pour permettre l'utilisation sans clé API
             updateSettings({
-              selectedModel: SupportedModels.OllamaMistral,
+              selectedModel: Array.from(downloadedModelsCache)[0] || "mistral",
+              openAIKey: "",
+              anthropicKey: "",
+              geminiKey: "",
+              huggingFaceKey: "",
             });
             onClose?.();
           }}
           w="full"
           variant="outline"
+          fontSize="sm" // Réduire la taille de la police
         >
-          Continue with Local Models
+          Continue with Local
         </Button>
       </HStack>
     </VStack>

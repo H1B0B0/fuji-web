@@ -137,12 +137,20 @@ export function isValidModelSettings(
   geminiKey?: string,
   huggingFaceKey?: string,
 ): boolean {
-  // Vérifier d'abord si c'est un modèle local
-  if (downloadedModelsCache.has(selectedModel)) {
+  // Vérifier d'abord si Ollama est disponible
+  if (downloadedModelsCache.size > 0) {
     return true;
   }
 
-  // Ensuite vérifier si c'est un modèle supporté
+  // Vérifier si c'est un modèle local
+  if (
+    selectedModel.startsWith("mistral") ||
+    downloadedModelsCache.has(selectedModel)
+  ) {
+    return true;
+  }
+
+  // Vérifier si c'est un modèle supporté
   if (!enumValues(SupportedModels).includes(selectedModel as SupportedModels)) {
     return false;
   }
