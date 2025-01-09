@@ -177,22 +177,40 @@ const ModelDropdown = () => {
     const defaultModels = enumValues(SupportedModels);
     const localModels = Array.from(downloadedModelsCache);
 
-    console.log("Processing available models:");
-    console.log("- Default models:", defaultModels);
-    console.log("- Local models:", localModels);
-
     // Créer un Map pour stocker les modèles uniques avec leur source
     const modelMap = new Map<string, string>();
 
-    // Ajouter d'abord les modèles par défaut
-    defaultModels.forEach((model) => modelMap.set(model, "default"));
+    // Filtrer les modèles par défaut en fonction des clés API
+    defaultModels.forEach((model) => {
+      if (
+        (isOpenAIModel(model) && openAIKey) ||
+        (isAnthropicModel(model) && anthropicKey) ||
+        (isGoogleModel(model) && geminiKey) ||
+        (isHuggingFaceModel(model) && huggingFaceKey)
+      ) {
+        modelMap.set(model, "default");
+      }
+    });
 
-    // Ajouter ensuite les modèles locaux
-    localModels.forEach((model) => modelMap.set(model, "local"));
+    // Ajouter les modèles locaux seulement s'ils sont dans le cache
+    localModels.forEach((model) => {
+      if (downloadedModelsCache.has(model)) {
+        modelMap.set(model, "local");
+      }
+    });
 
-    // Convertir le Map en tableau
+    console.log(
+      "Available models after filtering:",
+      Array.from(modelMap.keys()),
+    );
     return Array.from(modelMap.keys());
-  }, [downloadedModelsCache]);
+  }, [
+    downloadedModelsCache,
+    openAIKey,
+    anthropicKey,
+    geminiKey,
+    huggingFaceKey,
+  ]);
 
   const renderModelOption = (model: string) => {
     if (downloadedModelsCache.has(model)) {
@@ -366,3 +384,18 @@ const ModelDropdown = () => {
 };
 
 export default ModelDropdown;
+function isOpenAIModel(model: SupportedModels): boolean {
+  return model.startsWith("gpt-") || model.startsWith("openai/");
+}
+
+function isAnthropicModel(model: SupportedModels): boolean {
+  return model.startsWith("claude-");
+}
+
+function isGoogleModel(model: SupportedModels): boolean {
+  return model.startsWith("gemini-");
+}
+
+function isHuggingFaceModel(model: SupportedModels): boolean {
+  return model.startsWith("hf/");
+}

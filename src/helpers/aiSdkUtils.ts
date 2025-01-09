@@ -318,6 +318,8 @@ export async function downloadOllamaModel(
       headers: {
         "Content-Type": "application/json",
       },
+      mode: "cors",
+      credentials: "include",
       body: JSON.stringify({
         // NOTE the parameter name should match Ollama’s API spec:
         model: modelName,
@@ -596,8 +598,11 @@ export async function fetchResponseFromModelOllama(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Origin: "http://localhost",
+        // Remove Origin header as it's causing CORS issues
+        // Add mode and credentials for CORS
       },
+      mode: "cors",
+      credentials: "include",
       body: JSON.stringify(payload),
     });
 

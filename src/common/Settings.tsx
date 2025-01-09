@@ -34,6 +34,7 @@ import CustomKnowledgeBase from "./CustomKnowledgeBase";
 import SetAPIKey from "./settings/SetAPIKey";
 import { debugMode } from "../constants";
 import { isValidModelSettings } from "../helpers/aiSdkUtils";
+import { downloadedModelsCache } from "../helpers/aiSdkUtils";
 
 type SettingsProps = {
   setInSettingsView: React.Dispatch<React.SetStateAction<boolean>>;
@@ -54,15 +55,17 @@ const Settings = ({ setInSettingsView }: SettingsProps) => {
     huggingFaceKey: state.settings.huggingFaceKey,
     maxActions: state.currentTask.maxActions,
   }));
+
   const toast = useToast();
 
-  const hasAnyAPIKey =
+  const hasAccess =
     state.openAIKey ||
     state.anthropicKey ||
     state.geminiKey ||
-    state.huggingFaceKey;
+    state.huggingFaceKey ||
+    downloadedModelsCache.size > 0;
 
-  if (!hasAnyAPIKey && view !== "api") {
+  if (!hasAccess && view !== "api") {
     setView("api");
   }
 
@@ -148,7 +151,7 @@ const Settings = ({ setInSettingsView }: SettingsProps) => {
             onClose={backToSettings}
           />
         )}
-        {view === "settings" && (
+        {view === "settings" && hasAccess && (
           <FormControl
             as={VStack}
             divider={<StackDivider borderColor="gray.200" />}
