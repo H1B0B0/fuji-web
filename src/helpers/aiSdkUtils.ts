@@ -490,28 +490,41 @@ export async function fetchResponseFromModelOllama(
 ): Promise<Response> {
   console.log("fetchResponseFromModelOllama with params:", params);
 
-  const processVisibleContent = (content: string): string => {
-    const regex =
-      /<(a|button|input|textarea|select)[^>]*>(.*?)<\/\1>|<(a|button|input|textarea|select)[^>]*\/>/gi;
-    const elements = [...(content.match(regex) || [])];
-    const visibleElements = elements.slice(0, 25);
-    let output = "";
+  const processVisibleContent = (content: string, lastAction?: any): string => {
+    // Taille de chaque "page" de contenu
+    const tokenSize = 500;
+    const words = content.split(/\s+/);
 
-    visibleElements.forEach((elem, i) => {
-      output += `[${i}] ${elem.replace(/<[^>]+>/g, "").trim()}\n`;
-    });
+    // Récupérer l'index actuel depuis l'historique
+    const history = useAppState.getState().currentTask.history;
+    const scrollCount = history.filter((entry) => {
+      try {
+        const parsed = JSON.parse(entry.response?.rawResponse || "{}");
+        return parsed.action?.name === "scroll";
+      } catch {
+        return false;
+      }
+    }).length;
 
-    const moreCount = elements.length - visibleElements.length;
+    // Calculer la position actuelle
+    const startIndex = scrollCount * tokenSize;
+    const endIndex = Math.min(startIndex + tokenSize, words.length);
+
+    // Vérifier si on a atteint la fin
+    const hasMore = endIndex < words.length;
+    const isLastChunk = !hasMore || endIndex === words.length;
+
+    // Extraire la portion visible
+    const truncated = words.slice(startIndex, endIndex).join(" ");
 
     return `
-  Page Visible Elements (up to 25):
-  ---------------------------------
-  ${output}
-  ${moreCount > 0 ? `...and ${moreCount} more elements. Use the scroll action to reveal more content.` : ""}
+  Current Viewport Content (${isLastChunk ? "FINAL SECTION" : `Section ${scrollCount + 1}`}):
+  -------------------------------------------
+  ${truncated}
+  
+  ${isLastChunk ? "END OF PAGE - No more content available." : "More content available below. Use scroll action to see more."}
   `;
   };
-
-  const processedPrompt = processVisibleContent(params.prompt);
 
   const messageHistory = useAppState.getState().currentTask.history;
   const assistantMessages: any[] = [];
@@ -537,6 +550,9 @@ export async function fetchResponseFromModelOllama(
       }
     })
     .filter(Boolean);
+
+  const lastAction = assistantMessages[assistantMessages.length - 1]?.action;
+  const processedPrompt = processVisibleContent(params.prompt, lastAction);
 
   const singleAssistantHistoryMessage = {
     role: "assistant",
@@ -628,7 +644,7 @@ export async function fetchResponseFromModelOllama(
       required: ["thought", "action"],
     },
     options: {
-      temperature: 0,
+      temperature: 0.7,
     },
   };
 
