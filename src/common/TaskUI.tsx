@@ -229,7 +229,13 @@ const TaskUI = () => {
                   >
                     <VStack align="stretch" spacing={3}>
                       <Box>
-                        <Text>{entry.action.thought}</Text>
+                        <Text>
+                          {entry.type === "user"
+                            ? entry.prompt
+                            : entry.response?.rawResponse
+                              ? JSON.parse(entry.response.rawResponse).thought
+                              : "No response"}
+                        </Text>
                       </Box>
                     </VStack>
                   </MessageContainer>

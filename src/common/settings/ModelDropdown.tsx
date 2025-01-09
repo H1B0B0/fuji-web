@@ -174,43 +174,32 @@ const ModelDropdown = () => {
 
   // Modifier la logique des modèles disponibles
   const availableModels = React.useMemo(() => {
+    // Récupérer tous les modèles par défaut et locaux
     const defaultModels = enumValues(SupportedModels);
     const localModels = Array.from(downloadedModelsCache);
 
-    // Créer un Map pour stocker les modèles uniques avec leur source
-    const modelMap = new Map<string, string>();
+    // Créer un ensemble unique de tous les modèles
+    const allModels = new Set([...defaultModels, ...localModels]);
 
-    // Filtrer les modèles par défaut en fonction des clés API
-    defaultModels.forEach((model) => {
-      if (
-        (isOpenAIModel(model) && openAIKey) ||
-        (isAnthropicModel(model) && anthropicKey) ||
-        (isGoogleModel(model) && geminiKey) ||
-        (isHuggingFaceModel(model) && huggingFaceKey)
-      ) {
-        modelMap.set(model, "default");
-      }
-    });
+    // Retourner tous les modèles
+    return Array.from(allModels);
+  }, [downloadedModelsCache]);
 
-    // Ajouter les modèles locaux seulement s'ils sont dans le cache
-    localModels.forEach((model) => {
-      if (downloadedModelsCache.has(model)) {
-        modelMap.set(model, "local");
-      }
-    });
+  // Fonction pour vérifier si un modèle est disponible
+  const isModelAvailable = (model: string) => {
+    // Les modèles locaux sont toujours disponibles s'ils sont dans le cache
+    if (downloadedModelsCache.has(model)) {
+      return true;
+    }
 
-    console.log(
-      "Available models after filtering:",
-      Array.from(modelMap.keys()),
-    );
-    return Array.from(modelMap.keys());
-  }, [
-    downloadedModelsCache,
-    openAIKey,
-    anthropicKey,
-    geminiKey,
-    huggingFaceKey,
-  ]);
+    // Vérifier la disponibilité en fonction des clés API
+    if (isOpenAIModel(model) && openAIKey) return true;
+    if (isAnthropicModel(model) && anthropicKey) return true;
+    if (isGoogleModel(model) && geminiKey) return true;
+    if (isHuggingFaceModel(model) && huggingFaceKey) return true;
+
+    return false;
+  };
 
   const renderModelOption = (model: string) => {
     if (downloadedModelsCache.has(model)) {
@@ -237,18 +226,10 @@ const ModelDropdown = () => {
             <option
               key={model}
               value={model}
-              disabled={
-                !isValidModelSettings(
-                  model,
-                  agentMode,
-                  openAIKey,
-                  anthropicKey,
-                  geminiKey,
-                  huggingFaceKey,
-                )
-              }
+              disabled={!isModelAvailable(model)}
             >
               {renderModelOption(model)}
+              {!isModelAvailable(model) ? " (API Key Required)" : ""}
             </option>
           ))}
         </Select>

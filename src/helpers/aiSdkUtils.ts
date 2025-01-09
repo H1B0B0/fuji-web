@@ -5,6 +5,7 @@ import { useAppState } from "../state/store";
 import { enumValues } from "./utils";
 import { HfInference } from "@huggingface/inference";
 import { extractJsonFromMarkdown } from "./dom-agent/parseResponse";
+import { TaskHistoryEntry } from "../state/currentTask";
 
 // Ajouter les actions autorisées en constante
 const VALID_ACTIONS = [
@@ -489,6 +490,72 @@ export async function fetchResponseFromModelOllama(
 ): Promise<Response> {
   console.log("fetchResponseFromModelOllama with params:", params);
 
+  const processVisibleContent = (content: string): string => {
+    const regex =
+      /<(a|button|input|textarea|select)[^>]*>(.*?)<\/\1>|<(a|button|input|textarea|select)[^>]*\/>/gi;
+    const elements = [...(content.match(regex) || [])];
+    const visibleElements = elements.slice(0, 25);
+    let output = "";
+
+    visibleElements.forEach((elem, i) => {
+      output += `[${i}] ${elem.replace(/<[^>]+>/g, "").trim()}\n`;
+    });
+
+    const moreCount = elements.length - visibleElements.length;
+
+    return `
+  Page Visible Elements (up to 25):
+  ---------------------------------
+  ${output}
+  ${moreCount > 0 ? `...and ${moreCount} more elements. Use the scroll action to reveal more content.` : ""}
+  `;
+  };
+
+  const processedPrompt = processVisibleContent(params.prompt);
+
+  const messageHistory = useAppState.getState().currentTask.history;
+  const assistantMessages: any[] = [];
+  const conversationHistory = messageHistory
+    .map((entry: TaskHistoryEntry) => {
+      if (entry.type === "user") {
+        return {
+          role: "user",
+          content: entry.prompt,
+        };
+      } else {
+        try {
+          const parsed = JSON.parse(entry.response.rawResponse);
+          assistantMessages.push({
+            thought: parsed.thought,
+            action: parsed.action,
+          });
+          return null;
+        } catch (e) {
+          console.warn("Could not parse assistant message:", e);
+          return null;
+        }
+      }
+    })
+    .filter(Boolean);
+
+  const singleAssistantHistoryMessage = {
+    role: "assistant",
+    content: JSON.stringify({ messages: assistantMessages }, null, 2),
+  };
+
+  const messages = [
+    {
+      role: "system",
+      content: `${params.systemMessage || ""}\n\nIMPORTANT: Keep track of previous actions and avoid repeating them. Progress through the task step by step.`,
+    },
+    ...conversationHistory,
+    singleAssistantHistoryMessage,
+    {
+      role: "user",
+      content: processedPrompt,
+    },
+  ];
+
   // Verify cache and download if needed
   if (!downloadedModelsCache.has(model)) {
     const models = await listOllamaModels();
@@ -535,24 +602,9 @@ export async function fetchResponseFromModelOllama(
     }
   }
 
-  // Handle system message
-  const systemPrompt = params.systemMessage || "";
-
-  console.log("Debug Image Content:", imageContent);
-
   const payload = {
     model: model,
-    messages: [
-      {
-        role: "system",
-        content: systemPrompt,
-      },
-      {
-        role: "user",
-        content: params.prompt,
-        ...(imageContent ? { images: [imageContent] } : {}),
-      },
-    ],
+    messages: messages,
     stream: false,
     format: {
       type: "object",
@@ -1053,7 +1105,6 @@ export async function deleteOllamaModel(modelName: string): Promise<boolean> {
     return false;
   }
 }
-// ... add this new function ...
 
 export async function checkOllamaServer(): Promise<boolean> {
   try {
@@ -1064,5 +1115,3 @@ export async function checkOllamaServer(): Promise<boolean> {
     return false;
   }
 }
-
-// ... existing code ...

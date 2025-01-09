@@ -35,10 +35,16 @@ import {
 } from "../helpers/aiSdkUtils";
 
 export type TaskHistoryEntry = {
+  type: "user" | "assistant";
   prompt: string;
-  response: string;
-  action: Action;
-  usage: OpenAI.CompletionUsage | undefined;
+  response: {
+    rawResponse: string;
+    usage?: OpenAI.CompletionUsage;
+  };
+  action?: {
+    name: string;
+    args: Record<string, unknown>;
+  };
 };
 
 export type CurrentTaskSlice = {
@@ -172,14 +178,22 @@ export const createCurrentTaskSlice: MyStateCreator<CurrentTaskSlice> = (
             }
 
             set((state) => {
-              query &&
+              if (query) {
                 state.currentTask.history.push({
+                  type: "assistant",
                   prompt: query.prompt,
-                  response: query.rawResponse,
-                  action: query.action,
-                  usage: query.usage,
+                  response: {
+                    rawResponse: query.rawResponse,
+                    usage: query.usage,
+                  },
+                  action: {
+                    name: query.action.operation?.name ?? "unknown",
+                    args: query.action.operation?.args ?? {},
+                  },
                 });
+              }
             });
+
             if (
               query.action.operation === null ||
               query.action.operation.name === "finish" ||
