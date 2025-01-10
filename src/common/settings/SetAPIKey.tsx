@@ -10,10 +10,14 @@ import {
   HStack,
   FormControl,
   FormLabel,
+  useToast,
 } from "@chakra-ui/react";
 import React from "react";
 import { useAppState } from "../../state/store";
-import { downloadedModelsCache } from "@root/src/helpers/aiSdkUtils";
+import {
+  downloadedModelsCache,
+  downloadOllamaModel,
+} from "@root/src/helpers/aiSdkUtils";
 
 type SetAPIKeyProps = {
   asInitializerView?: boolean;
@@ -55,8 +59,9 @@ const SetAPIKey = ({
   );
 
   const [showPassword, setShowPassword] = React.useState(false);
+  const [isDownloading, setIsDownloading] = React.useState(false);
+  const toast = useToast();
 
-  // Dans SetAPIKey.tsx
   const onSave = () => {
     console.log("Saving API keys:", {
       openAIKey,
@@ -75,6 +80,50 @@ const SetAPIKey = ({
     });
 
     onClose && onClose();
+  };
+
+  const handleContinueWithLocal = async () => {
+    setIsDownloading(true);
+
+    try {
+      // Try to download mistral if no local models
+      if (downloadedModelsCache.size === 0) {
+        const success = await downloadOllamaModel("mistral");
+        if (success) {
+          updateSettings({
+            selectedModel: "mistral",
+            openAIKey: "",
+            anthropicKey: "",
+            geminiKey: "",
+            huggingFaceKey: "",
+          });
+          onClose?.();
+          return;
+        }
+      }
+
+      // Use existing local model if available
+      const localModels = Array.from(downloadedModelsCache);
+      if (localModels.length > 0) {
+        updateSettings({
+          selectedModel: localModels[0],
+          openAIKey: "",
+          anthropicKey: "",
+          geminiKey: "",
+          huggingFaceKey: "",
+        });
+        onClose?.();
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to setup local model",
+        status: "error",
+        duration: 5000,
+      });
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   return (
@@ -222,20 +271,11 @@ const SetAPIKey = ({
           Save API Keys
         </Button>
         <Button
-          onClick={() => {
-            // Mise à jour pour permettre l'utilisation sans clé API
-            updateSettings({
-              selectedModel: Array.from(downloadedModelsCache)[0] || "mistral",
-              openAIKey: "",
-              anthropicKey: "",
-              geminiKey: "",
-              huggingFaceKey: "",
-            });
-            onClose?.();
-          }}
+          onClick={handleContinueWithLocal}
           w="full"
           variant="outline"
           fontSize="sm" // Réduire la taille de la police
+          isLoading={isDownloading}
         >
           Continue with Local
         </Button>
