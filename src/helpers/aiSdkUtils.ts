@@ -6,6 +6,7 @@ import { enumValues } from "./utils";
 import { HfInference } from "@huggingface/inference";
 import { extractJsonFromMarkdown } from "./dom-agent/parseResponse";
 import { TaskHistoryEntry } from "../state/currentTask";
+import { getLocalModelParams } from "./localModelOptimizations";
 
 // Ajouter les actions autorisées en constante
 const VALID_ACTIONS = [
@@ -159,16 +160,24 @@ export function isValidModelSettings(
   // Vérification du mode vision
   if (
     agentMode === AgentMode.VisionEnhanced &&
-    !hasVisionSupport(selectedModel)
+    !hasVisionSupport(selectedModel as SupportedModels)
   ) {
     return false;
   }
 
   // Vérification des clés API
-  if (isOpenAIModel(selectedModel) && !openAIKey) return false;
-  if (isAnthropicModel(selectedModel) && !anthropicKey) return false;
-  if (isGoogleModel(selectedModel) && !geminiKey) return false;
-  if (isHuggingFaceModel(selectedModel) && !huggingFaceKey) return false;
+  if (
+    isSupportedModel(selectedModel) &&
+    isOpenAIModel(selectedModel as SupportedModels) &&
+    !openAIKey
+  )
+    return false;
+  if (isAnthropicModel(selectedModel as SupportedModels) && !anthropicKey)
+    return false;
+  if (isGoogleModel(selectedModel as SupportedModels) && !geminiKey)
+    return false;
+  if (isHuggingFaceModel(selectedModel as SupportedModels) && !huggingFaceKey)
+    return false;
 
   return true;
 }
@@ -484,13 +493,58 @@ async function validateAndResizeImage(
   });
 }
 
+function processVisibleContent(
+  content: string,
+  lastAction?: any,
+  extendedContext: boolean = false,
+): string {
+  // Taille de chaque "page" de contenu
+  const tokenSize = extendedContext ? 2000 : 500;
+  const words = content.split(/\s+/);
+
+  // Récupérer l'index actuel depuis l'historique
+  const history = useAppState.getState().currentTask.history;
+  const scrollCount = history.filter((entry) => {
+    try {
+      const parsed = JSON.parse(entry.response?.rawResponse || "{}");
+      return parsed.action?.name === "scroll";
+    } catch {
+      return false;
+    }
+  }).length;
+
+  // Calculer la position actuelle
+  const startIndex = scrollCount * tokenSize;
+  const endIndex = Math.min(startIndex + tokenSize, words.length);
+
+  // Vérifier si on a atteint la fin
+  const hasMore = endIndex < words.length;
+  const isLastChunk = !hasMore || endIndex === words.length;
+
+  // Extraire la portion visible
+  const truncated = words.slice(startIndex, endIndex).join(" ");
+
+  return `
+  Current Viewport Content (${isLastChunk ? "FINAL SECTION" : `Section ${scrollCount + 1}`}):
+  -------------------------------------------
+  ${truncated}
+  
+  ${isLastChunk ? "END OF PAGE - No more content available." : "More content available below. Use scroll action to see more."}
+  `;
+}
+
 export async function fetchResponseFromModelOllama(
   model: SupportedModels,
   params: CommonMessageCreateParams,
+  extendedContext = true, // new default
 ): Promise<Response> {
   console.log("fetchResponseFromModelOllama with params:", params);
 
-  const processVisibleContent = (content: string, lastAction?: any): string => {
+  const processVisibleContent = (
+    content: string,
+    lastAction?: any,
+    extendedContext: boolean = false,
+  ): string => {
     // Taille de chaque "page" de contenu
     const tokenSize = 500;
     const words = content.split(/\s+/);
@@ -552,7 +606,11 @@ export async function fetchResponseFromModelOllama(
     .filter(Boolean);
 
   const lastAction = assistantMessages[assistantMessages.length - 1]?.action;
-  const processedPrompt = processVisibleContent(params.prompt, lastAction);
+  const processedPrompt = processVisibleContent(
+    params.prompt,
+    lastAction,
+    extendedContext,
+  );
 
   const singleAssistantHistoryMessage = {
     role: "assistant",
@@ -579,12 +637,12 @@ export async function fetchResponseFromModelOllama(
 
     if (!modelInfo || modelInfo.status === "not_downloaded") {
       console.log(`Model ${model} not found, attempting to download...`);
-      const downloaded = await downloadOllamaModel(model);
+      const downloaded = await downloadOllamaModel(model as string);
       if (!downloaded) {
         throw new Error(`Failed to download model ${model}`);
       }
     }
-    downloadedModelsCache.add(model);
+    downloadedModelsCache.add(model as string);
   }
 
   const url = "http://localhost:11434/api/chat";
@@ -647,6 +705,14 @@ export async function fetchResponseFromModelOllama(
       temperature: 0.7,
     },
   };
+
+  if (downloadedModelsCache.has(model)) {
+    const { chunkSize, temperature } = getLocalModelParams();
+    // Use chunkSize
+    const tokenSize = chunkSize;
+    // Use temperature below if needed:
+    payload.options.temperature = temperature;
+  }
 
   // Ajouter une validation plus stricte de la réponse
   const validateResponse = (response: any): boolean => {
@@ -777,7 +843,8 @@ export async function fetchResponseFromModelHuggingFace(
       ]);
     }
 
-    const chatCompletion = await client.textGenerationStream({
+    // Replace textGenerationStream with textGeneration
+    const chatCompletion = await client.textGeneration({
       model: model,
       inputs: JSON.stringify({
         messages,
@@ -793,7 +860,8 @@ export async function fetchResponseFromModelHuggingFace(
 
     console.log("Raw HF response:", chatCompletion);
 
-    let responseContent = chatCompletion.choices[0].message?.content;
+    // Use generated_text instead of choices
+    let responseContent = chatCompletion.generated_text;
     if (!responseContent) {
       throw new Error("Empty response from HuggingFace API");
     }
